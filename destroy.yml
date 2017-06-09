@@ -28,14 +28,14 @@
           instance_id: "{{ vpc_facts.instances[0].id }}"
           instance_public_ip: "{{ vpc_facts.instances[0].public_ip_address }}"
 
-    - name: DevServer | Remove EC2 instance's ip from inventory
+    - name: ChefServer | Remove EC2 instance's ip from inventory
       local_action: 
         module: lineinfile 
         dest: "./inventory" 
         regexp: "{{ instance_public_ip }}" 
         state: absent
 
-    - name: DevServer | Destroy the DevServer Instance
+    - name: ChefServer | Destroy the ChefServer Instance
       local_action:
         module: ec2
         state: absent

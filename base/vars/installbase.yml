@@ -8,3 +8,5 @@ pkgs_list:
   - virtualenv
   - vim
   - linux-tools
+  - libjpeg-dev
+  - python3-bs4

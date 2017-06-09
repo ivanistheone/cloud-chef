@@ -1,6 +1,6 @@
 ---
 - name: Update the debain repositories
-  apt: 
+  apt:
     update_cache: yes
 
 - name: Install aptitude
@@ -8,8 +8,8 @@
     name: aptitude
     state: latest
 
-- name: Upgrade the Server
-  apt: 
+- name: Upgrade the server packages
+  apt:
     upgrade: safe
 
 - name: Install all the essential packages

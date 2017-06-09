@@ -1,5 +1,5 @@
 ---
-- name: Provision devserver on AWS (ec2 instance inside VPC)
+- name: Provision chefserver on AWS (ec2 instance inside VPC)
   hosts: localhost
   connection: local
   gather_facts: no
@@ -10,10 +10,10 @@
   tasks:
     - include: aws/tasks/vpc.yml
     - include: aws/tasks/securitygroups.yml
-    - include: aws/tasks/devserver.yml
+    - include: aws/tasks/chefserver.yml
 
-- name: Configure devserver
-  hosts: devserver
+- name: Configure chefserver
+  hosts: chefserver
   become: yes
   become_method: sudo
   remote_user: admin

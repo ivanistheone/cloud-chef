@@ -1,5 +1,5 @@
 ---
-- name: DevServer | Create the DevServer Instance
+- name: ChefServer | Create the ChefServer Instance
   local_action:
     module: ec2
     region: "{{ vpc_region }}"
@@ -21,20 +21,20 @@
 - name: debug create instance
   debug: msg="{{ web }}"
 
-- name: DevServer | Set the Instances facts
+- name: ChefServer | Set the Instances facts
   set_fact:
     instance_public_ip: "{{ web.instances[0].public_ip }}"
     instance_id: "{{ web.instances[0].id }}"
 
-- name: DevServer | Add the newly created EC2 instance(s) to the local host group (located inside the directory)
+- name: ChefServer | Add the newly created EC2 instance(s) to the local host group (located inside the directory)
   local_action: 
     module: lineinfile 
     dest: "./inventory" 
     regexp: "{{ instance_public_ip }}" 
-    insertafter: "[devserver]" 
+    insertafter: "[chefserver]" 
     line: "{{ instance_public_ip }}"
 
-- name: DevServer | Wait for SSH to come up
+- name: ChefServer | Wait for SSH to come up
   local_action: 
     module: wait_for 
     host: "{{ item }}" 
@@ -46,7 +46,7 @@
 - name: Create SSH Group to login dynamically to EC2 Instance(s)
   add_host:
     hostname: "{{ item }}"
-    groupname: devserver
+    groupname: chefserver
   with_items: 
     - "{{ instance_public_ip }}"
 
