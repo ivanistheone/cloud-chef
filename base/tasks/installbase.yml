@@ -1,0 +1,18 @@
+---
+- name: Update the debain repositories
+  apt: 
+    update_cache: yes
+
+- name: Install aptitude
+  apt:
+    name: aptitude
+    state: latest
+
+- name: Upgrade the Server
+  apt: 
+    upgrade: safe
+
+- name: Install all the essential packages
+  apt:
+    name: "{{ ','.join(pkgs_list) }}"
+    state: latest

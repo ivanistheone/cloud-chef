@@ -1,0 +1,62 @@
+---
+
+- name: Destroy AWS dev landacepe VPC
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars_files:
+    - aws/vars/vpc.yml
+    - aws/vars/securitygroups.yml
+    - aws/vars/ec2.yml
+
+  tasks:
+
+    - name: Load `vpc_id` from state file
+      set_fact:
+        vpc_id: "{{ lookup('file', 'aws/state/' + vpc_name + '-vpc-info') }}"
+
+    - name: Load all VPC info
+      ec2_remote_facts:
+        region: "{{ vpc_region }}"
+        filters:
+          vpc-id: "{{ vpc_id }}"
+      register: vpc_facts
+
+    - name: Set instance vars for later use
+      set_fact:
+          instance_id: "{{ vpc_facts.instances[0].id }}"
+          instance_public_ip: "{{ vpc_facts.instances[0].public_ip_address }}"
+
+    - name: DevServer | Remove EC2 instance's ip from inventory
+      local_action: 
+        module: lineinfile 
+        dest: "./inventory" 
+        regexp: "{{ instance_public_ip }}" 
+        state: absent
+
+    - name: DevServer | Destroy the DevServer Instance
+      local_action:
+        module: ec2
+        state: absent
+        instance_ids: ["{{instance_id}}"]
+        region: "{{ vpc_region }}"
+        wait: True
+
+    - name: Delete the WEB Security Group
+      ec2_group:
+        state: absent
+        name: "{{ item.sg_name }}"
+        description: "{{ item.sg_description }}"
+        region: "{{ vpc_region }}"
+        vpc_id: "{{ vpc_id }}"
+      with_items: "{{ web_security_groups }}"
+
+    - name: VPC | Deleting the AWS VPC
+      connection: local
+      ec2_vpc:
+        region: "{{ vpc_region }}"
+        state: absent
+        cidr_block: "{{ vpc_cidr_block }}"
+        resource_tags: { "Name":"{{ vpc_name }}-vpc" }
+        subnets: "{{ vpc_subnets }}" 

@@ -1,0 +1,10 @@
+---
+pkgs_list:
+  - build-essential
+  - git
+  - wget
+  - python3
+  - python3-dev
+  - virtualenv
+  - vim
+  - linux-tools

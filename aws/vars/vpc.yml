@@ -1,0 +1,23 @@
+---
+# Variables for VPC
+vpc_name: simplevpc
+vpc_region: ca-central-1   # Canada
+vpc_cidr_block: 10.10.0.0/16
+public_cidr: 10.10.9.0/24
+public_az: "{{ vpc_region }}a"
+
+# Subnets Defination for VPC
+vpc_subnets:
+  - cidr: "{{ public_cidr }}"
+    az: "{{ public_az }}"
+    resource_tags: { "Name":"{{ vpc_name }}-{{ public_az }}-public-subnet" }
+
+# Route table(s) for Subnets inside the VPC
+#
+# Routing Table for Public Subnet
+public_subnet_rt:
+  - subnets:
+      - "{{ public_cidr }}"
+    routes:
+      - dest: 0.0.0.0/0
+        gw: igw

@@ -1,0 +1,52 @@
+---
+- name: DevServer | Create the DevServer Instance
+  local_action:
+    module: ec2
+    region: "{{ vpc_region }}"
+    group: "{{ web_security_groups[0].sg_name }}"
+    keypair: "{{ key_name }}"
+    instance_type: "{{ instance_type }}"
+    image: "{{ image_id }}"
+    vpc_subnet_id: "{{ public_subnet }}"
+    assign_public_ip: True
+    wait: True
+    wait_timeout: 600
+    user_data: |
+              #!/bin/sh
+              sudo apt-get install nginx -y
+    instance_tags:
+      Name: "{{ vpc_name }}_DEV_Instance"
+  register: web
+
+- name: debug create instance
+  debug: msg="{{ web }}"
+
+- name: DevServer | Set the Instances facts
+  set_fact:
+    instance_public_ip: "{{ web.instances[0].public_ip }}"
+    instance_id: "{{ web.instances[0].id }}"
+
+- name: DevServer | Add the newly created EC2 instance(s) to the local host group (located inside the directory)
+  local_action: 
+    module: lineinfile 
+    dest: "./inventory" 
+    regexp: "{{ instance_public_ip }}" 
+    insertafter: "[devserver]" 
+    line: "{{ instance_public_ip }}"
+
+- name: DevServer | Wait for SSH to come up
+  local_action: 
+    module: wait_for 
+    host: "{{ item }}" 
+    port: 22 
+    state: started
+  with_items: 
+    - "{{ instance_public_ip }}"
+
+- name: Create SSH Group to login dynamically to EC2 Instance(s)
+  add_host:
+    hostname: "{{ item }}"
+    groupname: devserver
+  with_items: 
+    - "{{ instance_public_ip }}"
+
