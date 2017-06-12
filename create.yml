@@ -6,7 +6,8 @@
   vars_files:
     - aws/vars/vpc.yml
     - aws/vars/securitygroups.yml
-    - aws/vars/ec2.yml
+    - aws/vars/chefserver.yml
+    - aws/vars/chefsvolume.yml
   tasks:
     - include: aws/tasks/vpc.yml
     - include: aws/tasks/securitygroups.yml
@@ -20,5 +21,6 @@
   gather_facts: True
   vars_files:
     - base/vars/installbase.yml
+    - aws/vars/chefsvolume.yml
   tasks:
     - include: base/tasks/installbase.yml

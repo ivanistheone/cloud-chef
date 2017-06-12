@@ -7,7 +7,7 @@ to chef anything that needs chefing.
 
 Install
 -------
-To install 
+To install
 
     virtualenv venv
     source venv/bin/activate
@@ -31,7 +31,7 @@ to make these credentials available in your current shell.
 
 Gimme chef server!
 ------------------
-To create the VPC and a chefserver, run the command: 
+To create the VPC and a chefserver, run the command:
 
     ansible-playbook -i inventory create.yml
 
@@ -40,7 +40,7 @@ You can look for the public ip of the newly created instance in `./inventory`.
 
 I don't want it anymore
 -----------------------
-To delete the chefserver and the VPC, run the command: 
+To delete the chefserver and the VPC, run the command:
 
     ansible-playbook -i inventory destroy.yml
 
@@ -54,7 +54,7 @@ Some things you might want to adjust is `aws/vars/vpc.yml`:
 
 
 You might also want to change the settings for the virtual machine you'll be using,
-which are specified in the file `aws/vars/ec2.yml`:
+which are specified in the file `aws/vars/chefserver.yml`:
   - `image_id`: has the format `ami-xxxyyyzz` (default `ami-94bdeef4` latest Debian for the `us-west-1` region).
      Another popular choice is to use [Ubuntu AMIs](https://cloud-images.ubuntu.com/locator/ec2/).
   - `instance_type`: this setting determines the "size" of the virtual machine.

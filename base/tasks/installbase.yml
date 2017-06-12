@@ -1,4 +1,20 @@
 ---
+- name: Create /chefsvolume directory
+  file:
+    path: "{{ chefs_volume_mountpoint }}"
+    state: directory
+    owner: admin
+    group: admin
+    mode: 0777
+
+- name: Mount peristent EBS volume under /chefsvolume
+  when: use_persistent_chefsvolume
+  mount:
+    name: "{{ chefs_volume_mountpoint }}"   # changed to path in ansible 2.3
+    src: LABEL="{{ chefs_volume_label }}"
+    fstype: ext4
+    state: mounted
+
 - name: Update the debain repositories
   apt:
     update_cache: yes

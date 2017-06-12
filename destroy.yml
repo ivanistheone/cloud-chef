@@ -8,7 +8,7 @@
   vars_files:
     - aws/vars/vpc.yml
     - aws/vars/securitygroups.yml
-    - aws/vars/ec2.yml
+    - aws/vars/chefserver.yml
 
   tasks:
 
@@ -29,10 +29,10 @@
           instance_public_ip: "{{ vpc_facts.instances[0].public_ip_address }}"
 
     - name: ChefServer | Remove EC2 instance's ip from inventory
-      local_action: 
-        module: lineinfile 
-        dest: "./inventory" 
-        regexp: "{{ instance_public_ip }}" 
+      local_action:
+        module: lineinfile
+        dest: "./inventory"
+        regexp: "{{ instance_public_ip }}"
         state: absent
 
     - name: ChefServer | Destroy the ChefServer Instance
@@ -59,4 +59,4 @@
         state: absent
         cidr_block: "{{ vpc_cidr_block }}"
         resource_tags: { "Name":"{{ vpc_name }}-vpc" }
-        subnets: "{{ vpc_subnets }}" 
+        subnets: "{{ vpc_subnets }}"

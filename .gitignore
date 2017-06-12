@@ -1,5 +1,6 @@
 # State is transient
 aws/state/
+inventory
 
 # Don't commit credentials to repo
 credentials/
