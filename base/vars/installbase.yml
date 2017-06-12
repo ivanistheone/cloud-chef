@@ -3,10 +3,15 @@ pkgs_list:
   - build-essential
   - git
   - wget
+  - screen
   - python3
   - python3-dev
   - virtualenv
   - vim
   - linux-tools
+  - libfreetype6-dev
+  - libwebp-dev
   - libjpeg-dev
   - python3-bs4
+  - python3-pip
+  - ffmpeg

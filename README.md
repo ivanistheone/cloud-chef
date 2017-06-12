@@ -38,6 +38,29 @@ To create the VPC and a chefserver, run the command:
 You can look for the public ip of the newly created instance in `./inventory`.
 
 
+
+Running a chef
+--------------
+You can now connect to the server using `ssh admin@xx.yy.zz.ww` and start cheffing.
+If the `chefsvolume` is enabled, you'll have a large (500G) volume mounted under `/chefsvolume`.
+
+Go to that directory and checkout your chef's code, e.g., 
+
+    cd /chefsvolume
+    git clone https://github.com/ivanistheone/sushi-chef-mitblossoms.git
+    cd sushi-chef-mitblossoms
+    pip3 install -r requirements.txt
+
+You will need to upgrade some of the python packages:
+
+    sudo pip3 install --upgrade urllib3 chardet certifi idna humanfriendly
+
+At this point you can start you chef. Run the chef in a `screen` session if you
+want it to keep going after you logout.
+
+
+
+
 I don't want it anymore
 -----------------------
 To delete the chefserver and the VPC, run the command:
