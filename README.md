@@ -85,3 +85,9 @@ which are specified in the file `aws/vars/chefserver.yml`:
     but if you need more power, you can use one of the [other instance types](https://aws.amazon.com/ec2/instance-types/).
 
 
+
+TODOs
+-----
+Make sure steps are idempotnet (i.e. do not create new instance if already exists)
+
+
