@@ -1,5 +1,5 @@
 image_id: ami-94bdeef4  # Debian 8.7
 image_login_user: admin
 key_name: ivan@probook
-instance_type: c4.2xlarge   # 50 cents per hour = $11.95 per day
-# instance_type: c4.large   # 12 cents per hour = $3 per day
+# instance_type: c4.2xlarge   # 50 cents per hour = $11.95 per day
+instance_type: c4.xlarge   # 20C $5/day # 12 cents per hour = $3 per day

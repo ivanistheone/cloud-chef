@@ -16,3 +16,5 @@ pkgs_list:
   - python3-pip
   - ffmpeg
   - psmisc
+  - pkg-config
+  - libmagickwand-dev

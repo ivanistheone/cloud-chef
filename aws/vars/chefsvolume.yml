@@ -1,6 +1,6 @@
 # Reusable EBS volume for all persisting chefs' .webcache / storage / restore
 use_persistent_chefsvolume: true
-chefs_volume_id: vol-0f940c3d29fb37693
+chefs_volume_id: vol-0073c18ff9a20c46c
 chefs_volume_label: CHEFS_VOLUME
 chefs_volume_ec2_vol_device_name: /dev/sdf   # what we tell the ec2_vol module
 chefs_volume_device_name: /dev/xvdf          # actual device we see from linux
