@@ -1,6 +1,9 @@
 # Don't commit credentials to repo
 credentials/
 
+# Inventory of chefs copied from gdoc
+inventory/chef_inventory.csv
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
