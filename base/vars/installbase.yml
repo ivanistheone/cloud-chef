@@ -10,6 +10,7 @@ pkgs_list:
   - vim
   - linux-tools
   - libfreetype6-dev
+  - libxft-dev
   - libwebp-dev
   - libjpeg-dev
   - python3-bs4
