@@ -1,3 +1,5 @@
-ansible==2.2.1.0
-boto==2.45.0
-boto3==1.4.4
+Fabric3==1.13.1.post1
+Jinja2==2.10
+oauth2client==4.1.2
+gspread==0.6.2
+google-api-python-client==1.6.4
