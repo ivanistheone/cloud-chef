@@ -1,6 +1,11 @@
+import datetime
+from itertools import groupby
 import json
 import os
+import pprint
+import re
 import time
+from io import BytesIO
 
 from fabric.api import env, task, local, sudo, run
 from fabric.api import get, put, require
@@ -13,7 +18,9 @@ from fabric.utils import puts
 
 # FAB SETTTINGS
 ################################################################################
-env.user = 'chef'
+env.user = os.environ.get('USER')
+env.password = os.environ.get('SUDO_PASSWORD')
+
 env.roledefs = {
     'vader': {
         'hosts':['eslgenie.com:1'],           # because vader runs ssh on port 1
@@ -22,6 +29,7 @@ env.roledefs = {
         'hosts': ['35.227.153.135'],
     },
 }
+
 
 
 # CHEF INVENTORY
@@ -44,6 +52,9 @@ CHEF_USER = 'chef'
 STUDIO_TOKEN = os.environ.get('STUDIO_TOKEN')
 DEFAULT_GIT_BRANCH = 'master'
 CHEFS_DATA_DIR = '/data'
+CHEFS_LOGS_DIR = '/data/var/log'
+CHEFS_PID_DIR = '/data/var/run'
+CHEFS_CMDSOCKS_DIR = '/data/var/cmdsocks'
 
 
 
@@ -51,9 +62,10 @@ CHEFS_DATA_DIR = '/data'
 ################################################################################
 
 @task
-def run_chef(nickname):
+def run_chef(nickname, nohup=None):
     if STUDIO_TOKEN is None:
         raise ValueError('Must specify STUDIO_TOKEN env var on command line')
+    nohup = (nohup == 'True' or nohup == 'true')
 
     chef_info = INVENTORY[nickname]
     CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
@@ -66,21 +78,24 @@ def run_chef(nickname):
 
     with cd(chef_run_dir):
         with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
-            cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
-            sudo(cmd, user=CHEF_USER)
+            if nohup == False:
+                # Normal operation (blocking)
+                cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
+                sudo(cmd, user=CHEF_USER)
+            else:
+                # Run in background
+                cmd_prefix = 'nohup '
+                cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
+                cmd_suffix = ' & '
+                cmd_sleep = '(' + cmd_prefix + cmd + cmd_suffix + ') && sleep 1'
+                sudo(cmd_sleep, user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
+                nohupout = os.path.join(chef_run_dir, 'nohup.out')
+                puts(green('Chef started in backround. Use `tail -f ' + nohupout + '` to see logs.'))
+
 
 
 # CHEF SETUP
 ################################################################################
-
-@task
-def print_info():
-    with cd(CHEFS_DATA_DIR):
-        sudo("ls")
-        sudo("whoami")
-        run("ls")
-        run("whoami")
-
 
 @task
 def setup_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
@@ -142,13 +157,208 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 # CHEF CRONJOB SCHEDULING 
 ################################################################################
 
+def add_args(cmd, args_dict):
+    """
+    Insert the command line arguments from `args_dict` into a chef run command.
+    Assumes `cmd` contains the substring `--token` and inserts args right before
+    instead of appending to handle the case where cmd contains extra options. 
+    """
+    args_str = ''
+    for argk, argv in args_dict.items():
+        if argv is not None:
+            args_str += ' ' + argk + '=' + argv + ' '
+        else:
+            args_str += ' ' + argk + ' '
+    return cmd.replace('--token', args_str + ' --token')
+
+def _read_pid_file_contents(pid_file):
+    if not exists(pid_file):
+        print('operational error: PID file missing in /data/var/run/')
+        return None
+    tmp_fd = BytesIO()
+    with hide('running'):
+        get(pid_file, tmp_fd)
+    pid_str = tmp_fd.getvalue().decode('ascii').strip()
+    return pid_str
+
+def _check_process_running(pid_file):
+    pid_str = _read_pid_file_contents(pid_file)
+    if len(pid_str)==0:
+        return False
+    processes  = psaux()
+    found = False
+    for process in processes:
+        if process['PID'] == pid_str:
+            found = True
+    return found
+
+@task
+def start_chef_daemon(nickname):
+    chef_info = INVENTORY[nickname]
+    CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
+    chef_cwd = chef_info[WORKING_DIRECTORY_KEY]
+    if chef_cwd:
+        chef_run_dir = os.path.join(CHEF_DATA_DIR, chef_cwd)
+    else:
+        chef_run_dir = CHEF_DATA_DIR
+    now = datetime.datetime.now()
+    now_str = now.strftime('%Y-%m-%d')
+    log_file = os.path.join(CHEFS_LOGS_DIR, nickname + 'd__started_' + now_str + '.log')
+    pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
+    cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
+
+    # Check if pid file exists
+    if exists(pid_file):
+        running = _check_process_running(pid_file)
+        if running:
+            puts(red('ERROR: the ' + nickname + ' daemon is already running, see ' + pid_file))
+            return
+        else:
+            puts(yellow('WARNING: A PID file for the ' + nickname + ' daemon exists: ' + pid_file))
+            puts(yellow('but a process with this PID is not running...'))
+            puts(yellow('Deleting ' + pid_file + ' contrinuing noram operatoin...'))
+            sudo('rm -f ' + pid_file)
+
+    with cd(chef_run_dir):
+        with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
+            cmd_prefix = 'nohup '
+            orig_cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
+            new_cmd = add_args(orig_cmd, {'--daemon':None, '--cmdsock':cmdsock_file})
+            cmd_suffix = ' > {log_file} 2>&1 & echo $! > {pid_file}'.format(log_file=log_file, pid_file=pid_file)
+            cmd = cmd_prefix + new_cmd + cmd_suffix
+            puts(green('Starting ' + nickname + ' chef daemon...'))
+            sudo('(' + cmd + ') && sleep 1', user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
+            time.sleep(0.3)
+            running = _check_process_running(pid_file)
+            if running:
+                pid_str = _read_pid_file_contents(pid_file)
+                puts(green('Chef daemon started with PID=' + pid_str))
+            else:
+                puts(red('Chef daemon failed to start. Check /data/var/log/'))
+
+
+@task
+def stop_chef_daemon(nickname):
+    chef_info = INVENTORY[nickname]
+    pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
+    cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
+
+    # Check if pid file exists
+    if exists(pid_file):
+        running = _check_process_running(pid_file)
+        if running:
+            pid_str = _read_pid_file_contents(pid_file)
+            sudo('kill -SIGTERM ' + pid_str)
+            time.sleep(0.3)
+            running = _check_process_running(pid_file)
+            if not running:
+                sudo('rm -f ' + pid_file)
+                sudo('rm -f ' + cmdsock_file)
+                puts(green('Successfully stopped ' + nickname + ' chef daemon.'))
+            else:
+                puts(red('Failed to kill chef daemon with PID=' + pid_str))
+        else:
+            puts(yellow('WARNING: A PID file for the ' + nickname + ' daemon exists: ' + pid_file))
+            puts(yellow('but a process with this PID is not running...'))
+            puts(yellow('Deleting ' + pid_file + ' contrinuing noram operatoin...'))
+            sudo('rm -f ' + pid_file)
+    else:
+        puts(red('Chef daemon not running. PID file not found ' + pid_file))
+
+
+
+
 @task
 def schedule_chef(nickname):
     pass
 
+
 @task
 def unschedule_chef(nickname):
     pass
+
+
+
+
+# INFO
+################################################################################
+
+@task
+def print_info():
+    with cd(CHEFS_DATA_DIR):
+        sudo("ls")
+        sudo("whoami")
+        run("ls")
+        run("whoami")
+
+@task
+def pstree():
+    result = sudo('pstree -p')
+    print(result.stdout)
+
+
+def parse_psaux(psaux_str):
+    """
+    Parse the output of `ps aux` into a list of dictionaries representing the parsed
+    process information from each row of the output. Keys are mapped to column names,
+    parsed from the first line of the process' output.
+    :rtype: list[dict]
+    :returns: List of dictionaries, each representing a parsed row from the command output
+    """
+    lines = psaux_str.split('\n')
+    # lines = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).stdout.readlines()
+    headers = [h for h in ' '.join(lines[0].strip().split()).split() if h]
+    raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
+    return [dict(zip(headers, r)) for r in raw_data]
+
+
+@task
+def psaux_str():
+    with hide('running', 'stdout'):
+        result = sudo('ps aux')
+    print(result)
+
+@task
+def psaux():
+    with hide('running', 'stdout'):
+        result = sudo('ps aux')
+    processes = parse_psaux(result)
+    return processes
+
+@task
+def pypsaux():
+    processes  = psaux()
+    pyprocesses = []
+    for process in processes:
+        if 'python' in process['COMMAND']:
+            pyprocesses.append(process)
+
+    # detokenify
+    TOKEN_PAT = re.compile(r'--token=(?P<car>[\da-f]{6})(?P<cdr>[\da-f]{34})')
+    def _rmtoken_sub(match):
+        return '--token=' +match.groupdict()['car'] + '...'
+    for pyp in pyprocesses:
+        pyp['COMMAND'] = TOKEN_PAT.sub(_rmtoken_sub, pyp['COMMAND'])
+
+    # sort and enrich with current working dir (cwd)
+    pyprocesses = sorted(pyprocesses, key=lambda pyp: pyp['COMMAND'])
+    for cmd_str, process_group in groupby(pyprocesses, lambda vl: vl['COMMAND']):
+        process_group = list(process_group)
+        with hide('running', 'stdout'):
+            cwd_str = sudo('pwdx {}'.format(process_group[0]['PID'])).split(':')[1].strip()
+        for pyp in process_group:
+            pyp['cwd'] = cwd_str
+
+    # print tab-separated output
+    for pyp in pyprocesses:
+        output_vals = [
+            pyp['PID'],
+            pyp['START'],
+            pyp['TIME'],
+            pyp['COMMAND'],
+            '(cwd='+pyp['cwd']+')',
+        ]
+        print('\t'.join(output_vals))
 
 
 
@@ -178,7 +388,8 @@ def install_base():
         sudo('apt-get install -y python3 python3-pip python3-dev python3-virtualenv virtualenv python3-tk')
         sudo('apt-get install -y linux-tools libfreetype6-dev libxft-dev libwebp-dev libjpeg-dev libmagickwand-dev')
         sudo('apt-get install -y ffmpeg psmisc pkg-config phantomjs')
-        sudo('apt-get install -y netcat-openbsd')  # for 
+        sudo('apt-get install -y netcat-openbsd')  # for crobjobs to sending commands to chefs via control socket
+        # TODO: Add chef user
 
     # 2. ADD SWAP
     if not exists('/var/swap.1'):
@@ -189,7 +400,7 @@ def install_base():
         sudo('/sbin/swapon /var/swap.1')
         sudo('echo "/var/swap.1  none  swap  sw  0  0" >> /etc/fstab')
 
-    # # 3. ADD /data dir
+    # 3. ADD /data dir
     if not exists('/data'):
         puts(blue('MANUAL STEPS REQUIRED:'))
         dev = '/dev/sdb1'
@@ -202,4 +413,15 @@ def install_base():
         puts(blue('RUN echo "{dev}  /data  ext4  defaults   0   1" >> /etc/fstab'.format(dev=dev)))
         puts(blue('MOVE chef user home to /data'))
 
+    # 4. Create working dirs, like /datavar/run/ = has deamonized chefs pid files
+    if not exists(CHEFS_PID_DIR):
+        sudo('mkdir -p ' + CHEFS_PID_DIR, user=CHEF_USER)
+    # /data/var/log/ = daemonized chef's combined strout and stderr logs,
+    if not exists(CHEFS_LOGS_DIR):
+        sudo('mkdir -p ' + CHEFS_LOGS_DIR, user=CHEF_USER)
+    # and /data/var/cmdsocks/ = command sockets used by cronjobs to `run` chefs
+    if not exists(CHEFS_CMDSOCKS_DIR):
+        sudo('mkdir -p ' + CHEFS_CMDSOCKS_DIR, user=CHEF_USER)
+
     puts(green('Base install steps finished.'))
+

@@ -40,7 +40,7 @@ def download_inventory_csv():
     csv_data = response.content.decode('utf-8')
     with open(INVENTORY_CSV_PATH, 'w') as csvfile:
         csvfile.write(csv_data)
-        print('Succesfully saved ' + INVENTORY_CSV_PATH)
+        # print('Succesfully saved ' + INVENTORY_CSV_PATH)
 
 def _clean_dict(row):
     """
@@ -65,7 +65,7 @@ def load_inventory():
             clean_row = _clean_dict(row)
             nickname = clean_row[NICKNAME_KEY]
             if not nickname:
-                print('Skipping inventory row', clean_row)
+                # print('Skipping inventory row', clean_row)
                 continue
             dirname = github_repo_to_chefdir(clean_row[GITHUB_REPO_URL_KEY])
             clean_row[CHEFDIRNAME_KEY] = dirname
