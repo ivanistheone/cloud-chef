@@ -20,6 +20,7 @@ GITHUB_REPO_URL_KEY = 'Github Repo URL'
 POST_SETUP_COMMAND_KEY = 'Post-setup command'
 WORKING_DIRECTORY_KEY = 'Change Working Directory'
 COMMAND_KEY = 'Run Command'
+CRONTAB_KEY = 'Crontab Schedule'
 INVENTORY_FIELDNAMES = [
     NICKNAME_KEY,
     CHANNEL_ID_KEY,
@@ -28,6 +29,7 @@ INVENTORY_FIELDNAMES = [
     POST_SETUP_COMMAND_KEY,
     WORKING_DIRECTORY_KEY,
     COMMAND_KEY,
+    CRONTAB_KEY,
 ]
 
 # Extra keys

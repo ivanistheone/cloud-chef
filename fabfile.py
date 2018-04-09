@@ -1,11 +1,11 @@
 import datetime
+from io import BytesIO
 from itertools import groupby
 import json
 import os
-import pprint
+import pipes
 import re
 import time
-from io import BytesIO
 
 from fabric.api import env, task, local, sudo, run
 from fabric.api import get, put, require
@@ -270,7 +270,48 @@ def stop_chef_daemon(nickname):
 
 @task
 def schedule_chef(nickname):
-    pass
+    str = """11 22 * * * /bin/echo '{"command":"start"}' | /bin/nc -UN  /data/var/cmdsocks/sample-channels-ricecookerd.sock
+11 22 * * * /bin/echo '{"command":"start"}' | /bin/nc -UN  /data/var/cmdsocks/sample-channels-ricecookerd.sock"""
+
+    esc_str = pipes.quote(str)
+    sudo("echo {} | crontab - ".format(esc_str), shell=True, user=CHEF_USER)
+
+
+CRONTAB_PATTERN = re.compile(\
+    "{0}\s+{1}\s+{2}\s+{3}\s+{4}\s+{5}".format(\
+        "(?P<minute>\*|[0-5]?\d)",\
+        "(?P<hour>\*|[01]?\d|2[0-3])",\
+        "(?P<day_of_month>\*|0?[1-9]|[12]\d|3[01])",\
+        "(?P<month_of_year>\*|0?[1-9]|1[012])",\
+        "(?P<day_of_week>\*|[0-6](\-[0-6])?)",\
+        "(?P<command>.*)$"\
+    )
+)
+
+@task
+def list_scheduled_chefs(format='text'):
+    with hide('running', 'stdout'):
+        result = sudo('crontab -l', user=CHEF_USER)
+    cronjobs = []
+    for line in result.splitlines():
+        m = CRONTAB_PATTERN.match(line)
+        if m:
+            cronjobs.append(m.groupdict())
+    
+    def _conjob_dict_to_str(cronjob):
+        return " ".join([cronjob['minute'],
+                         cronjob['hour'],
+                         cronjob['day_of_month'],
+                         cronjob['month_of_year'],
+                         cronjob['day_of_week'],
+                         cronjob['command']])
+    if format == 'list_of_dicts':
+        return cronjobs
+    elif format == 'text':
+        for cronjob in cronjobs:
+            print(_conjob_dict_to_str(cronjob))
+    else:
+        raise ValueError('Unrecognized format specified')
 
 
 @task
@@ -388,7 +429,7 @@ def install_base():
         sudo('apt-get install -y python3 python3-pip python3-dev python3-virtualenv virtualenv python3-tk')
         sudo('apt-get install -y linux-tools libfreetype6-dev libxft-dev libwebp-dev libjpeg-dev libmagickwand-dev')
         sudo('apt-get install -y ffmpeg psmisc pkg-config phantomjs')
-        sudo('apt-get install -y netcat-openbsd')  # for crobjobs to sending commands to chefs via control socket
+        sudo('apt-get install -y netcat-openbsd')  # for cronjobs to sending commands to chefs via control socket
         # TODO: Add chef user
 
     # 2. ADD SWAP
