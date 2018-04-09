@@ -155,7 +155,7 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 
 
 
-# CHEF CRONJOB SCHEDULING 
+# DAEMON CHEFS (triggerred by sushibar remote commands or local cronjobs)
 ################################################################################
 
 def add_args(cmd, args_dict):
@@ -172,26 +172,6 @@ def add_args(cmd, args_dict):
             args_str += ' ' + argk + ' '
     return cmd.replace('--token', args_str + ' --token')
 
-def _read_pid_file_contents(pid_file):
-    if not exists(pid_file):
-        print('operational error: PID file missing in /data/var/run/')
-        return None
-    tmp_fd = BytesIO()
-    with hide('running'):
-        get(pid_file, tmp_fd)
-    pid_str = tmp_fd.getvalue().decode('ascii').strip()
-    return pid_str
-
-def _check_process_running(pid_file):
-    pid_str = _read_pid_file_contents(pid_file)
-    if len(pid_str)==0:
-        return False
-    processes  = psaux()
-    found = False
-    for process in processes:
-        if process['PID'] == pid_str:
-            found = True
-    return found
 
 @task
 def start_chef_daemon(nickname):
@@ -267,6 +247,8 @@ def stop_chef_daemon(nickname):
 
 
 
+# CHEF CRONJOB SCHEDULING 
+################################################################################
 
 @task
 def list_scheduled_chefs(print_cronjobs=True):
@@ -390,6 +372,27 @@ def pypsaux():
             '(cwd='+pyp['cwd']+')',
         ]
         print('\t'.join(output_vals))
+
+def _read_pid_file_contents(pid_file):
+    if not exists(pid_file):
+        print('operational error: PID file missing in /data/var/run/')
+        return None
+    tmp_fd = BytesIO()
+    with hide('running'):
+        get(pid_file, tmp_fd)
+    pid_str = tmp_fd.getvalue().decode('ascii').strip()
+    return pid_str
+
+def _check_process_running(pid_file):
+    pid_str = _read_pid_file_contents(pid_file)
+    if len(pid_str)==0:
+        return False
+    processes  = psaux()
+    found = False
+    for process in processes:
+        if process['PID'] == pid_str:
+            found = True
+    return found
 
 
 
