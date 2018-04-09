@@ -75,9 +75,11 @@ To stop the chef daemon, run:
 
 Scheduled chef runs cronjob
 ---------------------------
-[COMING SOON]
-Follow daemon mode setup, then call
+Follow daemon mode setup to start a daemon chef, then call
 
+    fab -R cloud-kitchen  list_scheduled_chefs
     fab -R cloud-kitchen  schedule_chef:<nickname>
-    [COMING SOON]
+
+To unschedule a chef use the `unschedule_chef` task.
+
 

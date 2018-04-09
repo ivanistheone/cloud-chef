@@ -41,6 +41,7 @@ from inventory import ( NICKNAME_KEY,
                         POST_SETUP_COMMAND_KEY,
                         WORKING_DIRECTORY_KEY,
                         COMMAND_KEY,
+                        CRONTAB_KEY,
                         CHEFDIRNAME_KEY)
 from inventory import load_inventory
 INVENTORY = load_inventory()
@@ -243,7 +244,6 @@ def stop_chef_daemon(nickname):
     pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
     cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
 
-    # Check if pid file exists
     if exists(pid_file):
         running = _check_process_running(pid_file)
         if running:
@@ -269,55 +269,45 @@ def stop_chef_daemon(nickname):
 
 
 @task
-def schedule_chef(nickname):
-    str = """11 22 * * * /bin/echo '{"command":"start"}' | /bin/nc -UN  /data/var/cmdsocks/sample-channels-ricecookerd.sock
-11 22 * * * /bin/echo '{"command":"start"}' | /bin/nc -UN  /data/var/cmdsocks/sample-channels-ricecookerd.sock"""
-
-    esc_str = pipes.quote(str)
-    sudo("echo {} | crontab - ".format(esc_str), shell=True, user=CHEF_USER)
-
-
-CRONTAB_PATTERN = re.compile(\
-    "{0}\s+{1}\s+{2}\s+{3}\s+{4}\s+{5}".format(\
-        "(?P<minute>\*|[0-5]?\d)",\
-        "(?P<hour>\*|[01]?\d|2[0-3])",\
-        "(?P<day_of_month>\*|0?[1-9]|[12]\d|3[01])",\
-        "(?P<month_of_year>\*|0?[1-9]|1[012])",\
-        "(?P<day_of_week>\*|[0-6](\-[0-6])?)",\
-        "(?P<command>.*)$"\
-    )
-)
-
-@task
-def list_scheduled_chefs(format='text'):
+def list_scheduled_chefs(print_cronjobs=True):
     with hide('running', 'stdout'):
         result = sudo('crontab -l', user=CHEF_USER)
-    cronjobs = []
-    for line in result.splitlines():
-        m = CRONTAB_PATTERN.match(line)
-        if m:
-            cronjobs.append(m.groupdict())
-    
-    def _conjob_dict_to_str(cronjob):
-        return " ".join([cronjob['minute'],
-                         cronjob['hour'],
-                         cronjob['day_of_month'],
-                         cronjob['month_of_year'],
-                         cronjob['day_of_week'],
-                         cronjob['command']])
-    if format == 'list_of_dicts':
-        return cronjobs
-    elif format == 'text':
+    cronjobs = [line for line in result.splitlines() if not line.startswith('#')]
+    if print_cronjobs:
         for cronjob in cronjobs:
-            print(_conjob_dict_to_str(cronjob))
-    else:
-        raise ValueError('Unrecognized format specified')
+            print(cronjob)
+    return cronjobs
 
+@task
+def schedule_chef(nickname):
+    chef_info = INVENTORY[nickname]
+    cronjobs = list_scheduled_chefs(print_cronjobs=False)
+    if any([nickname in cronjob for cronjob in cronjobs]):
+        puts(red('ERROR: chef is already scheduled! Current crontab contains:'))
+        list_scheduled_chefs(print_cronjobs=True)
+        return
+    command = """/bin/echo '{"command":"start", "args":{"stage":true} }' | """ + \
+              """/bin/nc -UN  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
+    crontab_schedule = chef_info[CRONTAB_KEY]
+    new_cronjob = crontab_schedule + ' ' + command
+    cronjobs.append(new_cronjob)
+    cronjobs_str = '\n'.join(cronjobs)
+    escaped_str = pipes.quote(cronjobs_str)
+    sudo("echo {} | crontab - ".format(escaped_str), user=CHEF_USER)
 
 @task
 def unschedule_chef(nickname):
-    pass
-
+    cronjobs = list_scheduled_chefs(print_cronjobs=False)    
+    if not any([nickname in cronjob for cronjob in cronjobs]):
+        puts(red('ERROR: chef not scheduled, so cannot unschedule.'))
+        return
+    newcronjobs = []
+    for cronjob in cronjobs:
+        if nickname not in cronjob:
+            newcronjobs.append(cronjob)    
+    newcronjobs_str = '\n'.join(newcronjobs)
+    escaped_str = pipes.quote(newcronjobs_str)
+    sudo("echo {} | crontab - ".format(escaped_str), user=CHEF_USER)
 
 
 
