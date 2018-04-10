@@ -14,22 +14,24 @@ INVENTORY_CSV_PATH = 'inventory/chef_inventory.csv'
 
 # CSV header keys
 NICKNAME_KEY = 'Nickname'
-CHANNEL_ID_KEY = 'Channel ID'
 CHANNEL_NAME_KEY = 'Channel Name'
+CHANNEL_ID_KEY = 'Channel ID'
 GITHUB_REPO_URL_KEY = 'Github Repo URL'
 POST_SETUP_COMMAND_KEY = 'Post-setup command'
 WORKING_DIRECTORY_KEY = 'Change Working Directory'
 COMMAND_KEY = 'Run Command'
 CRONTAB_KEY = 'Crontab Schedule'
+COMMENTS_KEY = 'Comments'
 INVENTORY_FIELDNAMES = [
     NICKNAME_KEY,
-    CHANNEL_ID_KEY,
     CHANNEL_NAME_KEY,
+    CHANNEL_ID_KEY,
     GITHUB_REPO_URL_KEY,
     POST_SETUP_COMMAND_KEY,
     WORKING_DIRECTORY_KEY,
     COMMAND_KEY,
     CRONTAB_KEY,
+    COMMENTS_KEY,
 ]
 
 # Extra keys
@@ -63,6 +65,7 @@ def load_inventory():
     with open(INVENTORY_CSV_PATH, 'r') as csvfile:
         reader = csv.DictReader(csvfile, fieldnames=INVENTORY_FIELDNAMES)
         next(reader)  # Skip Headers row
+        next(reader)  # Skip description row
         for row in reader:
             clean_row = _clean_dict(row)
             nickname = clean_row[NICKNAME_KEY]
@@ -83,6 +86,7 @@ def load_inventory():
 GITHUB_REPO_NAME_PAT = re.compile(r'https://github.com/(?P<repo_account>\w*?)/(?P<repo_name>[A-Za-z0-9_-]*)')
 def github_repo_to_chefdir(github_url):
     """
+    Extracts the `chefdir` (repo name) from a github URL.
     """
     if github_url.endswith('/'):
         github_url = github_url[0:-1]

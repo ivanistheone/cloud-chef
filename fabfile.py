@@ -35,13 +35,14 @@ env.roledefs = {
 # CHEF INVENTORY
 ################################################################################
 from inventory import ( NICKNAME_KEY,
-                        CHANNEL_ID_KEY,
                         CHANNEL_NAME_KEY,
+                        CHANNEL_ID_KEY,
                         GITHUB_REPO_URL_KEY,
                         POST_SETUP_COMMAND_KEY,
                         WORKING_DIRECTORY_KEY,
                         COMMAND_KEY,
                         CRONTAB_KEY,
+                        COMMENTS_KEY,
                         CHEFDIRNAME_KEY)
 from inventory import load_inventory
 INVENTORY = load_inventory()
@@ -63,14 +64,18 @@ CHEFS_CMDSOCKS_DIR = '/data/var/cmdsocks'
 ################################################################################
 
 @task
-def run_chef(nickname, nohup=None):
+def run_chef(nickname, nohup=None, stage=False):
     if STUDIO_TOKEN is None:
         raise ValueError('Must specify STUDIO_TOKEN env var on command line')
     nohup = (nohup == 'True' or nohup == 'true')
+    stage = (stage == 'True' or stage == 'true')
 
     chef_info = INVENTORY[nickname]
     CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
     chef_cwd = chef_info[WORKING_DIRECTORY_KEY]
+    cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
+    if stage:
+        cmd = add_args(cmd, {'--stage':None})
 
     if chef_cwd:
         chef_run_dir = os.path.join(CHEF_DATA_DIR, chef_cwd)
@@ -81,12 +86,10 @@ def run_chef(nickname, nohup=None):
         with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
             if nohup == False:
                 # Normal operation (blocking)
-                cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
                 sudo(cmd, user=CHEF_USER)
             else:
                 # Run in background
                 cmd_prefix = 'nohup '
-                cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
                 cmd_suffix = ' & '
                 cmd_sleep = '(' + cmd_prefix + cmd + cmd_suffix + ') && sleep 1'
                 sudo(cmd_sleep, user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
@@ -124,7 +127,8 @@ def setup_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
                 # install requirements
                 sudo('pip install --no-input --quiet -r ' + reqs_filepath, user=CHEF_USER)
                 # run post-setup command
-                sudo(chef_info[POST_SETUP_COMMAND_KEY], user=CHEF_USER)
+                if chef_info[POST_SETUP_COMMAND_KEY] is not None:
+                    sudo(chef_info[POST_SETUP_COMMAND_KEY], user=CHEF_USER)
         puts(green('Setup chef code from ' + chef_info[GITHUB_REPO_URL_KEY] + ' in ' + CHEF_DATA_DIR))
 
 @task
