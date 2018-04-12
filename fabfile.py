@@ -160,20 +160,6 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 # DAEMON CHEFS (triggerred by sushibar remote commands or local cronjobs)
 ################################################################################
 
-def add_args(cmd, args_dict):
-    """
-    Insert the command line arguments from `args_dict` into a chef run command.
-    Assumes `cmd` contains the substring `--token` and inserts args right before
-    instead of appending to handle the case where cmd contains extra options. 
-    """
-    args_str = ''
-    for argk, argv in args_dict.items():
-        if argv is not None:
-            args_str += ' ' + argk + '=' + argv + ' '
-        else:
-            args_str += ' ' + argk + ' '
-    return cmd.replace('--token', args_str + ' --token')
-
 
 @task
 def start_chef_daemon(nickname):
@@ -301,31 +287,15 @@ def unschedule_chef(nickname):
 @task
 def print_info():
     with cd(CHEFS_DATA_DIR):
-        sudo("ls")
-        sudo("whoami")
         run("ls")
         run("whoami")
+        sudo("ls")
+        sudo("whoami")
 
 @task
 def pstree():
     result = sudo('pstree -p')
     print(result.stdout)
-
-
-def parse_psaux(psaux_str):
-    """
-    Parse the output of `ps aux` into a list of dictionaries representing the parsed
-    process information from each row of the output. Keys are mapped to column names,
-    parsed from the first line of the process' output.
-    :rtype: list[dict]
-    :returns: List of dictionaries, each representing a parsed row from the command output
-    """
-    lines = psaux_str.split('\n')
-    # lines = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).stdout.readlines()
-    headers = [h for h in ' '.join(lines[0].strip().split()).split() if h]
-    raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
-    return [dict(zip(headers, r)) for r in raw_data]
-
 
 @task
 def psaux_str():
@@ -374,28 +344,6 @@ def pypsaux():
             '(cwd='+pyp['cwd']+')',
         ]
         print('\t'.join(output_vals))
-
-def _read_pid_file_contents(pid_file):
-    if not exists(pid_file):
-        print('operational error: PID file missing in /data/var/run/')
-        return None
-    tmp_fd = BytesIO()
-    with hide('running'):
-        get(pid_file, tmp_fd)
-    pid_str = tmp_fd.getvalue().decode('ascii').strip()
-    return pid_str
-
-def _check_process_running(pid_file):
-    pid_str = _read_pid_file_contents(pid_file)
-    if len(pid_str)==0:
-        return False
-    processes  = psaux()
-    found = False
-    for process in processes:
-        if process['PID'] == pid_str:
-            found = True
-    return found
-
 
 
 # SYSADMIN TASKS (provision a new cloud chef host semi-automatically)
@@ -494,5 +442,55 @@ def wrap_in_nohup(cmd, redirects=None, pid_file=None):
     # wrap it yo!
     return cmd_prefix + cmd + cmd_suffix
 
+def add_args(cmd, args_dict):
+    """
+    Insert the command line arguments from `args_dict` into a chef run command.
+    Assumes `cmd` contains the substring `--token` and inserts args right before
+    instead of appending to handle the case where cmd contains extra options. 
+    """
+    args_str = ''
+    for argk, argv in args_dict.items():
+        if argv is not None:
+            args_str += ' ' + argk + '=' + argv + ' '
+        else:
+            args_str += ' ' + argk + ' '
+    return cmd.replace('--token', args_str + ' --token')
+
+
+
+def _read_pid_file_contents(pid_file):
+    if not exists(pid_file):
+        print('operational error: PID file missing in /data/var/run/')
+        return None
+    tmp_fd = BytesIO()
+    with hide('running'):
+        get(pid_file, tmp_fd)
+    pid_str = tmp_fd.getvalue().decode('ascii').strip()
+    return pid_str
+
+def _check_process_running(pid_file):
+    pid_str = _read_pid_file_contents(pid_file)
+    if len(pid_str)==0:
+        return False
+    processes  = psaux()
+    found = False
+    for process in processes:
+        if process['PID'] == pid_str:
+            found = True
+    return found
+
+def parse_psaux(psaux_str):
+    """
+    Parse the output of `ps aux` into a list of dictionaries representing the parsed
+    process information from each row of the output. Keys are mapped to column names,
+    parsed from the first line of the process' output.
+    :rtype: list[dict]
+    :returns: List of dictionaries, each representing a parsed row from the command output
+    """
+    lines = psaux_str.split('\n')
+    # lines = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).stdout.readlines()
+    headers = [h for h in ' '.join(lines[0].strip().split()).split() if h]
+    raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
+    return [dict(zip(headers, r)) for r in raw_data]
 
 
