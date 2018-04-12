@@ -31,7 +31,8 @@ https://docs.google.com/spreadsheets/d/1vx07agIPaboRHthtGGjJqiLQbXzzM1Mr5gUxxnre
 
 Must specify:
   - Nickname: short blurb-like string that identified a channel
-  - Github Repo: 
+  - Github Repo: an URL of the form `https://github.com/{org}/{chefname}`, the
+    code for this chef script will be cloned to `/data/{chefname}` during setup.
   - Command needed to run the chef, including all arguments and options:
      - use `--token={studio_token}` as part of the command, which will later be
        replaced with environment variable `STUDIO_TOKEN`.
@@ -42,9 +43,9 @@ Must specify:
     fab -R cloud-kitchen  setup_chef:<nickname>
 
 The above command will clone chef code, create a virtual environment, and install
-the requirements.txt.
+the python packages in the `requirements.txt` for the project.
 
-Run `update_chef` task to update chef code to latest vestison (`fetch` and `checkout --hard`).
+Run `update_chef` task to update chef code to latest version (`fetch` and `checkout --hard`).
 
 To remove chef code completely and start from scratch, use `unsetup_chef`.
 
