@@ -89,8 +89,8 @@ def run_chef(nickname, nohup=None, stage=False):
                 sudo(cmd, user=CHEF_USER)
             else:
                 # Run in background
-                cmd_prefix = 'nohup '
-                cmd_suffix = ' & '
+                cmd_prefix = 'nohup bash -c "('
+                cmd_suffix = ' )" & '
                 cmd_sleep = '(' + cmd_prefix + cmd + cmd_suffix + ') && sleep 1'
                 sudo(cmd_sleep, user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
                 nohupout = os.path.join(chef_run_dir, 'nohup.out')
