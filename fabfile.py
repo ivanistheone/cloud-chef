@@ -89,12 +89,10 @@ def run_chef(nickname, nohup=None, stage=False):
                 sudo(cmd, user=CHEF_USER)
             else:
                 # Run in background
-                cmd_prefix = 'nohup bash -c "('
-                cmd_suffix = ' )" & '
-                cmd_sleep = '(' + cmd_prefix + cmd + cmd_suffix + ') && sleep 1'
-                sudo(cmd_sleep, user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
-                nohupout = os.path.join(chef_run_dir, 'nohup.out')
-                puts(green('Chef started in backround. Use `tail -f ' + nohupout + '` to see logs.'))
+                cmd_nohup = wrap_in_nohup(cmd)
+                sudo(cmd_nohup, user=CHEF_USER)
+                nohup_out_file = os.path.join(chef_run_dir, 'nohup.out')
+                puts(green('Chef started in backround. Use `tail -f ' + nohup_out_file + '` to see logs.'))
 
 
 
@@ -206,13 +204,12 @@ def start_chef_daemon(nickname):
 
     with cd(chef_run_dir):
         with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
-            cmd_prefix = 'nohup '
             orig_cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
             new_cmd = add_args(orig_cmd, {'--daemon':None, '--cmdsock':cmdsock_file})
-            cmd_suffix = ' > {log_file} 2>&1 & echo $! > {pid_file}'.format(log_file=log_file, pid_file=pid_file)
-            cmd = cmd_prefix + new_cmd + cmd_suffix
+            redirects = ' > {log_file} 2>&1 '.format(log_file=log_file)
+            cmd_nohup = wrap_in_nohup(new_cmd, redirects=redirects, pid_file=pid_file)
             puts(green('Starting ' + nickname + ' chef daemon...'))
-            sudo('(' + cmd + ') && sleep 1', user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
+            sudo(cmd_nohup, user=CHEF_USER)
             time.sleep(0.3)
             running = _check_process_running(pid_file)
             if running:
@@ -248,6 +245,7 @@ def stop_chef_daemon(nickname):
             sudo('rm -f ' + pid_file)
     else:
         puts(red('Chef daemon not running. PID file not found ' + pid_file))
+
 
 
 
@@ -462,4 +460,39 @@ def install_base():
         sudo('mkdir -p ' + CHEFS_CMDSOCKS_DIR, user=CHEF_USER)
 
     puts(green('Base install steps finished.'))
+
+
+
+
+
+# HELPER METHODS
+################################################################################
+
+def wrap_in_nohup(cmd, redirects=None, pid_file=None):
+    """
+    This wraps the chef command `cmd` appropriately for it to run in background
+    using the nohup to avoid being terminated when the HANGUP signal is received
+    when shell exists. This function is necessary to support some edge cases:
+      - composite commands, e.g. ``source ./c/keys.env && ./chef.py``
+      - adds an extra sleep 1 call so commands doesn't exit too fast and confuse fabric
+    Args:
+      redirects (str):  options for redirecting command's stdout and stderr
+      pid_file (str): path to pid file where to save pid of backgrdoun process (needed for stop command)
+    """
+    # prefixes
+    cmd_prefix = ' ('            # wrapping needed for sleep suffix
+    cmd_prefix += ' nohup '      # call cmd using nohup
+    cmd_prefix += ' bash -c "('  # spawn subshell in case cmd has multiple parts
+    # suffixes
+    cmd_suffix = ' )" '          # /spawn subshell
+    if redirects is not None:    # optional stdout/stderr redirects (e.g. send output to a log file)
+        cmd_suffix += redirects
+    cmd_suffix += ' & '          # put nohup command in background
+    if pid_file is not None:     # optionally save nohup pid in  `pid_file`
+         cmd_suffix += ' echo $! > {pid_file} '.format(pid_file=pid_file)
+    cmd_suffix += ') && sleep 1' # via https://stackoverflow.com/a/43152236
+    # wrap it yo!
+    return cmd_prefix + cmd + cmd_suffix
+
+
 
