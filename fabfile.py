@@ -273,7 +273,7 @@ def schedule_chef(nickname):
         list_scheduled_chefs(print_cronjobs=True)
         return
     command = """/bin/echo '{"command":"start", "args":{"stage":true} }' | """ + \
-              """/bin/nc -UN  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
+              """/bin/nc -U -q 1  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
     crontab_schedule = chef_info[CRONTAB_KEY]
     new_cronjob = crontab_schedule + ' ' + command
     cronjobs.append(new_cronjob)
