@@ -192,7 +192,7 @@ def start_chef_daemon(nickname):
         with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
             orig_cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
             new_cmd = add_args(orig_cmd, {'--daemon':None, '--cmdsock':cmdsock_file})
-            redirects = ' > {log_file} 2>&1 '.format(log_file=log_file)
+            redirects = ' >>{log_file} 2>&1 '.format(log_file=log_file)
             cmd_nohup = wrap_in_nohup(new_cmd, redirects=redirects, pid_file=pid_file)
             puts(green('Starting ' + nickname + ' chef daemon...'))
             sudo(cmd_nohup, user=CHEF_USER)
@@ -207,6 +207,12 @@ def start_chef_daemon(nickname):
 
 @task
 def stop_chef_daemon(nickname):
+    """
+    Read the PID file for the `nickname` chef and kill the chef process.
+    The process id we read from the `pid_file` for this chef could be either of:
+      A. the PID of the bash shell that started the chef daemons, or
+      B. the python chef process itself, so we need to handle both cases.
+    """
     chef_info = INVENTORY[nickname]
     pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
     cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
@@ -215,8 +221,17 @@ def stop_chef_daemon(nickname):
         running = _check_process_running(pid_file)
         if running:
             pid_str = _read_pid_file_contents(pid_file)
-            sudo('kill -SIGTERM ' + pid_str)
-            time.sleep(0.3)
+
+            # CASE A: kill child processes for the parent bash shell
+            sudo('pkill --parent ' + pid_str + ' || true')
+            # shell will exit by itself, since child process has exited...
+
+            # CASE B: kill the python chef process itself
+            running = _check_process_running(pid_file)
+            if running:
+                sudo('kill -SIGTERM ' + pid_str)
+
+            # Make sure not running anymore, and cleanup
             running = _check_process_running(pid_file)
             if not running:
                 sudo('rm -f ' + pid_file)
@@ -430,14 +445,14 @@ def wrap_in_nohup(cmd, redirects=None, pid_file=None):
     # prefixes
     cmd_prefix = ' ('            # wrapping needed for sleep suffix
     cmd_prefix += ' nohup '      # call cmd using nohup
-    cmd_prefix += ' bash -c "('  # spawn subshell in case cmd has multiple parts
+    cmd_prefix += ' bash -c " '  # spawn subshell in case cmd has multiple parts
     # suffixes
-    cmd_suffix = ' )" '          # /spawn subshell
+    cmd_suffix = ' " '           # /subshell
     if redirects is not None:    # optional stdout/stderr redirects (e.g. send output to a log file)
         cmd_suffix += redirects
     cmd_suffix += ' & '          # put nohup command in background
     if pid_file is not None:     # optionally save nohup pid in  `pid_file`
-         cmd_suffix += ' echo $! > {pid_file} '.format(pid_file=pid_file)
+         cmd_suffix += ' echo $! >{pid_file} '.format(pid_file=pid_file)
     cmd_suffix += ') && sleep 1' # via https://stackoverflow.com/a/43152236
     # wrap it yo!
     return cmd_prefix + cmd + cmd_suffix
@@ -470,7 +485,7 @@ def _read_pid_file_contents(pid_file):
 
 def _check_process_running(pid_file):
     pid_str = _read_pid_file_contents(pid_file)
-    if len(pid_str)==0:
+    if pid_str is None or len(pid_str)==0:
         return False
     processes  = psaux()
     found = False
