@@ -89,12 +89,10 @@ def run_chef(nickname, nohup=None, stage=False):
                 sudo(cmd, user=CHEF_USER)
             else:
                 # Run in background
-                cmd_prefix = 'nohup bash -c "('
-                cmd_suffix = ' )" & '
-                cmd_sleep = '(' + cmd_prefix + cmd + cmd_suffix + ') && sleep 1'
-                sudo(cmd_sleep, user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
-                nohupout = os.path.join(chef_run_dir, 'nohup.out')
-                puts(green('Chef started in backround. Use `tail -f ' + nohupout + '` to see logs.'))
+                cmd_nohup = wrap_in_nohup(cmd)
+                sudo(cmd_nohup, user=CHEF_USER)
+                nohup_out_file = os.path.join(chef_run_dir, 'nohup.out')
+                puts(green('Chef started in backround. Use `tail -f ' + nohup_out_file + '` to see logs.'))
 
 
 
@@ -162,20 +160,6 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 # DAEMON CHEFS (triggerred by sushibar remote commands or local cronjobs)
 ################################################################################
 
-def add_args(cmd, args_dict):
-    """
-    Insert the command line arguments from `args_dict` into a chef run command.
-    Assumes `cmd` contains the substring `--token` and inserts args right before
-    instead of appending to handle the case where cmd contains extra options. 
-    """
-    args_str = ''
-    for argk, argv in args_dict.items():
-        if argv is not None:
-            args_str += ' ' + argk + '=' + argv + ' '
-        else:
-            args_str += ' ' + argk + ' '
-    return cmd.replace('--token', args_str + ' --token')
-
 
 @task
 def start_chef_daemon(nickname):
@@ -206,13 +190,12 @@ def start_chef_daemon(nickname):
 
     with cd(chef_run_dir):
         with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
-            cmd_prefix = 'nohup '
             orig_cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
             new_cmd = add_args(orig_cmd, {'--daemon':None, '--cmdsock':cmdsock_file})
-            cmd_suffix = ' > {log_file} 2>&1 & echo $! > {pid_file}'.format(log_file=log_file, pid_file=pid_file)
-            cmd = cmd_prefix + new_cmd + cmd_suffix
+            redirects = ' >>{log_file} 2>&1 '.format(log_file=log_file)
+            cmd_nohup = wrap_in_nohup(new_cmd, redirects=redirects, pid_file=pid_file)
             puts(green('Starting ' + nickname + ' chef daemon...'))
-            sudo('(' + cmd + ') && sleep 1', user=CHEF_USER)  # via https://stackoverflow.com/a/43152236
+            sudo(cmd_nohup, user=CHEF_USER)
             time.sleep(0.3)
             running = _check_process_running(pid_file)
             if running:
@@ -224,6 +207,12 @@ def start_chef_daemon(nickname):
 
 @task
 def stop_chef_daemon(nickname):
+    """
+    Read the PID file for the `nickname` chef and kill the chef process.
+    The process id we read from the `pid_file` for this chef could be either of:
+      A. the PID of the bash shell that started the chef daemons, or
+      B. the python chef process itself, so we need to handle both cases.
+    """
     chef_info = INVENTORY[nickname]
     pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
     cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
@@ -232,8 +221,17 @@ def stop_chef_daemon(nickname):
         running = _check_process_running(pid_file)
         if running:
             pid_str = _read_pid_file_contents(pid_file)
-            sudo('kill -SIGTERM ' + pid_str)
-            time.sleep(0.3)
+
+            # CASE A: kill child processes for the parent bash shell
+            sudo('pkill --parent ' + pid_str + ' || true')
+            # shell will exit by itself, since child process has exited...
+
+            # CASE B: kill the python chef process itself
+            running = _check_process_running(pid_file)
+            if running:
+                sudo('kill -SIGTERM ' + pid_str)
+
+            # Make sure not running anymore, and cleanup
             running = _check_process_running(pid_file)
             if not running:
                 sudo('rm -f ' + pid_file)
@@ -248,6 +246,7 @@ def stop_chef_daemon(nickname):
             sudo('rm -f ' + pid_file)
     else:
         puts(red('Chef daemon not running. PID file not found ' + pid_file))
+
 
 
 
@@ -273,7 +272,7 @@ def schedule_chef(nickname):
         list_scheduled_chefs(print_cronjobs=True)
         return
     command = """/bin/echo '{"command":"start", "args":{"stage":true} }' | """ + \
-              """/bin/nc -UN  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
+              """/bin/nc -U -q 1  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
     crontab_schedule = chef_info[CRONTAB_KEY]
     new_cronjob = crontab_schedule + ' ' + command
     cronjobs.append(new_cronjob)
@@ -303,31 +302,15 @@ def unschedule_chef(nickname):
 @task
 def print_info():
     with cd(CHEFS_DATA_DIR):
-        sudo("ls")
-        sudo("whoami")
         run("ls")
         run("whoami")
+        sudo("ls")
+        sudo("whoami")
 
 @task
 def pstree():
     result = sudo('pstree -p')
     print(result.stdout)
-
-
-def parse_psaux(psaux_str):
-    """
-    Parse the output of `ps aux` into a list of dictionaries representing the parsed
-    process information from each row of the output. Keys are mapped to column names,
-    parsed from the first line of the process' output.
-    :rtype: list[dict]
-    :returns: List of dictionaries, each representing a parsed row from the command output
-    """
-    lines = psaux_str.split('\n')
-    # lines = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).stdout.readlines()
-    headers = [h for h in ' '.join(lines[0].strip().split()).split() if h]
-    raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
-    return [dict(zip(headers, r)) for r in raw_data]
-
 
 @task
 def psaux_str():
@@ -376,28 +359,6 @@ def pypsaux():
             '(cwd='+pyp['cwd']+')',
         ]
         print('\t'.join(output_vals))
-
-def _read_pid_file_contents(pid_file):
-    if not exists(pid_file):
-        print('operational error: PID file missing in /data/var/run/')
-        return None
-    tmp_fd = BytesIO()
-    with hide('running'):
-        get(pid_file, tmp_fd)
-    pid_str = tmp_fd.getvalue().decode('ascii').strip()
-    return pid_str
-
-def _check_process_running(pid_file):
-    pid_str = _read_pid_file_contents(pid_file)
-    if len(pid_str)==0:
-        return False
-    processes  = psaux()
-    found = False
-    for process in processes:
-        if process['PID'] == pid_str:
-            found = True
-    return found
-
 
 
 # SYSADMIN TASKS (provision a new cloud chef host semi-automatically)
@@ -462,4 +423,89 @@ def install_base():
         sudo('mkdir -p ' + CHEFS_CMDSOCKS_DIR, user=CHEF_USER)
 
     puts(green('Base install steps finished.'))
+
+
+
+
+
+# HELPER METHODS
+################################################################################
+
+def wrap_in_nohup(cmd, redirects=None, pid_file=None):
+    """
+    This wraps the chef command `cmd` appropriately for it to run in background
+    using the nohup to avoid being terminated when the HANGUP signal is received
+    when shell exists. This function is necessary to support some edge cases:
+      - composite commands, e.g. ``source ./c/keys.env && ./chef.py``
+      - adds an extra sleep 1 call so commands doesn't exit too fast and confuse fabric
+    Args:
+      redirects (str):  options for redirecting command's stdout and stderr
+      pid_file (str): path to pid file where to save pid of backgrdoun process (needed for stop command)
+    """
+    # prefixes
+    cmd_prefix = ' ('            # wrapping needed for sleep suffix
+    cmd_prefix += ' nohup '      # call cmd using nohup
+    cmd_prefix += ' bash -c " '  # spawn subshell in case cmd has multiple parts
+    # suffixes
+    cmd_suffix = ' " '           # /subshell
+    if redirects is not None:    # optional stdout/stderr redirects (e.g. send output to a log file)
+        cmd_suffix += redirects
+    cmd_suffix += ' & '          # put nohup command in background
+    if pid_file is not None:     # optionally save nohup pid in  `pid_file`
+         cmd_suffix += ' echo $! >{pid_file} '.format(pid_file=pid_file)
+    cmd_suffix += ') && sleep 1' # via https://stackoverflow.com/a/43152236
+    # wrap it yo!
+    return cmd_prefix + cmd + cmd_suffix
+
+def add_args(cmd, args_dict):
+    """
+    Insert the command line arguments from `args_dict` into a chef run command.
+    Assumes `cmd` contains the substring `--token` and inserts args right before
+    instead of appending to handle the case where cmd contains extra options. 
+    """
+    args_str = ''
+    for argk, argv in args_dict.items():
+        if argv is not None:
+            args_str += ' ' + argk + '=' + argv + ' '
+        else:
+            args_str += ' ' + argk + ' '
+    return cmd.replace('--token', args_str + ' --token')
+
+
+
+def _read_pid_file_contents(pid_file):
+    if not exists(pid_file):
+        print('operational error: PID file missing in /data/var/run/')
+        return None
+    tmp_fd = BytesIO()
+    with hide('running'):
+        get(pid_file, tmp_fd)
+    pid_str = tmp_fd.getvalue().decode('ascii').strip()
+    return pid_str
+
+def _check_process_running(pid_file):
+    pid_str = _read_pid_file_contents(pid_file)
+    if pid_str is None or len(pid_str)==0:
+        return False
+    processes  = psaux()
+    found = False
+    for process in processes:
+        if process['PID'] == pid_str:
+            found = True
+    return found
+
+def parse_psaux(psaux_str):
+    """
+    Parse the output of `ps aux` into a list of dictionaries representing the parsed
+    process information from each row of the output. Keys are mapped to column names,
+    parsed from the first line of the process' output.
+    :rtype: list[dict]
+    :returns: List of dictionaries, each representing a parsed row from the command output
+    """
+    lines = psaux_str.split('\n')
+    # lines = subprocess.Popen(['ps', 'aux'], stdout=subprocess.PIPE).stdout.readlines()
+    headers = [h for h in ' '.join(lines[0].strip().split()).split() if h]
+    raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
+    return [dict(zip(headers, r)) for r in raw_data]
+
 
