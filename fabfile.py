@@ -257,7 +257,7 @@ def stop_chef_daemon(nickname):
 def list_scheduled_chefs(print_cronjobs=True):
     with hide('running', 'stdout'):
         result = sudo('crontab -l', user=CHEF_USER)
-    cronjobs = [line for line in result.splitlines() if not line.startswith('#')]
+    cronjobs = result.splitlines()
     if print_cronjobs:
         for cronjob in cronjobs:
             print(cronjob)
