@@ -161,9 +161,10 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 # DAEMON CHEFS (triggerred by sushibar remote commands or local cronjobs)
 ################################################################################
 
-
 @task
 def start_chef_daemon(nickname):
+    if STUDIO_TOKEN is None:
+        raise ValueError('Must specify STUDIO_TOKEN env var on command line')
     chef_info = INVENTORY[nickname]
     CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
     chef_cwd = chef_info[WORKING_DIRECTORY_KEY]
