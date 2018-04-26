@@ -84,3 +84,18 @@ Follow daemon mode setup to start a daemon chef, then call
 To unschedule a chef use the `unschedule_chef` task.
 
 
+
+
+
+Creating a github repo for a new chef
+-------------------------------------
+The code for each chef script lives in its own github repo under the `learnignequality` org.
+Run the following command to create an empty github repo for a new chef:
+
+    fab create_github_repo:chef-nickname,source_url="https://url_of_sourcewebsite.org"
+
+This will create the github repository https://github.com/learningequality/sushi-chef-chef-nickname
+and enable read/write access to this repo for the "Sushi Chefs" team.
+The `source_url` argument is optional, but it's nice to have.
+This command requires a github API key to be present in the `credentials/` dir.
+

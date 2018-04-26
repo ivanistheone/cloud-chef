@@ -1,4 +1,5 @@
 import datetime
+from github import Github
 from io import BytesIO
 from itertools import groupby
 import json
@@ -425,6 +426,43 @@ def install_base():
     puts(green('Base install steps finished.'))
 
 
+
+
+# GITHUB REPO
+################################################################################
+GITHUB_API_TOKEN_FILE = 'credentials/github_api.json'
+GITHUB_API_TOKEN_NAME = 'cloud-chef-token'
+GITHUB_SUSHI_CHEFS_TEAM_ID = 2590528  # "Sushi Chefs" team = all sushi chef devs
+
+@task
+def create_github_repo(nickname, source_url=None, init=True, private=False):
+    """
+    Create a github repo for chef given its `nickname` and `source_url`.
+    """
+    init = True if init=='False' or init=='false' else True
+    private = True if private=='True' or private=='true' else False
+    description = 'Sushi Chef script for importing {} content'.format(nickname)
+    if source_url:
+        description += ' from ' + str(source_url)
+    repo_name = 'sushi-chef-' + nickname
+    with open(GITHUB_API_TOKEN_FILE, 'r') as tokenf:
+        token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
+        github = Github(token)
+        le_org = github.get_organization('learningequality')
+        # 1. create repo
+        repo = le_org.create_repo(repo_name,
+                                  description=description,
+                                  private=private,
+                                  has_issues=True,
+                                  has_wiki=False,
+                                  auto_init=init,
+                                  license_template='mit',
+                                  gitignore_template='Python')
+        # 3. Give "Sushi Chefs" team read/write persmissions
+        team = le_org.get_team(GITHUB_SUSHI_CHEFS_TEAM_ID)
+        team.add_to_repos(repo)
+        team.set_repo_permission(repo, 'push')
+    puts(green('Chef repo succesfully created: {}'.format(repo.html_url)))
 
 
 
