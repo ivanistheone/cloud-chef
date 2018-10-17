@@ -33,6 +33,7 @@ env.roledefs = {
 
 
 
+
 # CHEF INVENTORY
 ################################################################################
 from inventory import ( NICKNAME_KEY,
@@ -68,8 +69,8 @@ CHEFS_CMDSOCKS_DIR = '/data/var/cmdsocks'
 def run_chef(nickname, nohup=None, stage=False):
     if STUDIO_TOKEN is None:
         raise ValueError('Must specify STUDIO_TOKEN env var on command line')
-    nohup = (nohup == 'True' or nohup == 'true')
-    stage = (stage == 'True' or stage == 'true')
+    nohup = (nohup == 'True' or nohup == 'true')  # defaults to False
+    stage = (stage == 'True' or stage == 'true')  # defaults to False
 
     chef_info = INVENTORY[nickname]
     CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
@@ -300,6 +301,7 @@ def unschedule_chef(nickname):
 
 # INFO
 ################################################################################
+EXCLUDE_PYPSAUX_PATTERNS = ['system-config', 'cinnamon-killer', 'apport-gtk']
 
 @task
 def print_info():
@@ -333,7 +335,8 @@ def pypsaux():
     pyprocesses = []
     for process in processes:
         if 'python' in process['COMMAND']:
-            pyprocesses.append(process)
+            if not any([pat in process['COMMAND'] for pat in EXCLUDE_PYPSAUX_PATTERNS]):
+                pyprocesses.append(process)
 
     # detokenify
     TOKEN_PAT = re.compile(r'--token=(?P<car>[\da-f]{6})(?P<cdr>[\da-f]{34})')
