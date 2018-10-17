@@ -301,7 +301,7 @@ def unschedule_chef(nickname):
 
 # INFO
 ################################################################################
-EXCLUDE_PYPSAUX_PATTERNS = ['system-config', 'cinnamon-killer', 'apport-gtk']
+EXCLUDE_PYPSAUX_PATTERNS = ['system-config', 'cinnamon-killer', 'apport-gtk', 'buildkite']
 
 @task
 def print_info():
@@ -469,6 +469,28 @@ def create_github_repo(nickname, source_url=None, init=True, private=False):
     puts(green('Chef repo succesfully created: {}'.format(repo.html_url)))
 
 
+@task
+def list_chef_repos():
+    """
+    Prints a list of all github repos that match the `sushi-chef-*` pattern.
+    """
+    CHEF_REPO_PATTERN = re.compile('.*sushi-chef-.*')
+    with open(GITHUB_API_TOKEN_FILE, 'r') as tokenf:
+        token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
+        github = Github(token)
+        le_org = github.get_organization('learningequality')
+        repos = le_org.get_repos()
+        chef_repos = []
+        for repo in repos:
+            if CHEF_REPO_PATTERN.search(repo.name):
+                chef_repos.append(repo)
+        for repo in chef_repos:
+            pulls = list(repo.get_pulls())
+            issues = list(repo.get_issues())
+            print(repo.name,
+                  '\t', repo.html_url,
+                  '\t', len(pulls), 'PRs',
+                  '\t', len(issues), 'Issues')
 
 # HELPER METHODS
 ################################################################################
