@@ -1,6 +1,9 @@
 # Don't commit credentials to repo
 credentials/
 
+inventory/trelloarchives
+
+
 # Inventory of chefs copied from gdoc
 inventory/chef_inventory.csv
 
