@@ -443,7 +443,7 @@ def create_github_repo(nickname, source_url=None, init=True, private=False):
     """
     Create a github repo for chef given its `nickname` and `source_url`.
     """
-    init = True if init=='False' or init=='false' else True
+    init = False if init=='False' or init=='false' else True
     private = True if private=='True' or private=='true' else False
     description = 'Sushi Chef script for importing {} content'.format(nickname)
     if source_url:
@@ -453,15 +453,20 @@ def create_github_repo(nickname, source_url=None, init=True, private=False):
         token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
         github = Github(token)
         le_org = github.get_organization('learningequality')
+
         # 1. create repo
-        repo = le_org.create_repo(repo_name,
-                                  description=description,
-                                  private=private,
-                                  has_issues=True,
-                                  has_wiki=False,
-                                  auto_init=init,
-                                  license_template='mit',
-                                  gitignore_template='Python')
+        create_repo_kwargs = dict(
+            description=description,
+            private=private,
+            has_issues=True,
+            has_wiki=False,
+            auto_init=init
+        )
+        if init:
+            create_repo_kwargs['license_template'] = 'mit'
+            create_repo_kwargs['gitignore_template'] = 'Python'
+        repo = le_org.create_repo(repo_name, **create_repo_kwargs)
+
         # 3. Give "Sushi Chefs" team read/write persmissions
         team = le_org.get_team(GITHUB_SUSHI_CHEFS_TEAM_ID)
         team.add_to_repos(repo)
