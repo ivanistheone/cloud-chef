@@ -15,12 +15,24 @@ from fabric.context_managers import cd, prefix, show, hide, shell_env
 from fabric.contrib.files import exists, sed, upload_template
 from fabric.utils import puts
 
+from libstudio import StudioApi
+try:
+    from notion.client import NotionClient
+except ImportError as e:
+    puts(red('Could not import NotionClient. Notion integrations will not work!'))
 
 
 # FAB SETTTINGS
 ################################################################################
 env.user = os.environ.get('USER')
 env.password = os.environ.get('SUDO_PASSWORD')
+env.notion_token = os.environ.get('NOTION_TOKEN')
+
+# Studio
+STUDIO_TOKEN = os.environ.get('STUDIO_TOKEN')
+env.studio_user = os.environ.get('STUDIO_USER')
+env.studio_pass = os.environ.get('STUDIO_PASS')
+env.studio_url = os.environ.get('STUDIO_URL', 'https://studio.learningequality.org')
 
 env.roledefs = {
     'vader': {
@@ -53,7 +65,6 @@ INVENTORY = load_inventory()
 # GLOBAL CHEF SETTINGS
 ################################################################################
 CHEF_USER = 'chef'
-STUDIO_TOKEN = os.environ.get('STUDIO_TOKEN')
 DEFAULT_GIT_BRANCH = 'master'
 CHEFS_DATA_DIR = '/data'
 CHEFS_LOGS_DIR = '/data/var/log'
@@ -577,4 +588,42 @@ def parse_psaux(psaux_str):
     raw_data = map(lambda s: s.strip().split(None, len(headers) - 1), lines[1:])
     return [dict(zip(headers, r)) for r in raw_data]
 
+
+
+
+
+# NOTION INTEGRATION
+################################################################################
+
+@task
+def update_notion_channels_info():
+    """
+    Update the "Studio Channels" notion board cards with latest info from Studio.
+    """
+    # Studio API client
+    if os.path.exists('cache.sqlite3'):
+        os.remove('cache.sqlite3')
+    studio_api = StudioApi(studio_url=env.studio_url, token=STUDIO_TOKEN,
+                           username=env.studio_user, password=env.studio_pass)
+
+    # Notion API
+    client = NotionClient(token_v2=env.notion_token, monitor=False)
+    studio_channels_url = 'https://www.notion.so/learningequality/761249f8782c48289780d6693431d900?v=44827975ce5f4b23b5157381fac302c4'
+    page = client.get_block(studio_channels_url)
+    notion_channels = page.collection.get_rows()
+
+    # Update Notion channels using info from Studio API
+    for notion_channel in notion_channels:
+        channel_id = notion_channel.get_property('channel_id')
+        channel_name = notion_channel.get_property('name')
+        if channel_id:
+            puts(green('Updating notion card for channel ' + channel_name + ' channel_id=' + channel_id))
+            # get info from Studio API
+            channel_info_dict = studio_api.get_channel(channel_id)
+            notion_channel.is_public = channel_info_dict['public']
+            notion_channel.description = channel_info_dict['description']
+            notion_channel.version = channel_info_dict['version']
+            notion_channel.name = channel_info_dict['name']
+        else:
+            puts(yellow('Skipping channel named ' + channel_name))
 

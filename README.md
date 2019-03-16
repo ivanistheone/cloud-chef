@@ -99,3 +99,18 @@ and enable read/write access to this repo for the "Sushi Chefs" team.
 The `source_url` argument is optional, but it's nice to have.
 This command requires a github API key to be present in the `credentials/` dir.
 
+
+
+Updating "Studio Channels" Notion database
+------------------------------------------
+You first need to export some ENV variables necessary for the API calls to work:
+
+    export STUDIO_TOKEN=<YOURSTUDIOTOKENGOESGHERE>
+    export STUDIO_USER="you@learningequality.org"
+    export STUDIO_PASS="yourstudiopassword"
+    export NOTION_TOKEN=<YOURNOTIONTOKEN>  # look for it in the HTTP headers
+
+With these vars in place, run the sync operation for all channels using:
+
+    fab update_notion_channels_info
+
