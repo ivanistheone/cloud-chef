@@ -1,5 +1,5 @@
 Fabric3==1.14.post1
-Jinja2==2.10
-requests==2.18.4
+Jinja2>=2.10.1
+requests>=2.22.0
 PyGithub==1.39
 notion>=0.0.23
