@@ -16,10 +16,9 @@ from fabric.contrib.files import exists, sed, upload_template
 from fabric.utils import puts
 
 from libstudio import StudioApi
-try:
-    from notion.client import NotionClient
-except ImportError as e:
-    puts(red('Could not import NotionClient. Notion integrations will not work!'))
+
+from notion.client import NotionClient
+from libnotion import add_issue_tracker_to_card
 
 
 # FAB SETTTINGS
@@ -614,6 +613,13 @@ def parse_psaux(psaux_str):
 
 # NOTION INTEGRATION
 ################################################################################
+
+@task
+def add_issue_tracker(id):
+    print('Adding "Issue Tracker" to notion card... https://www.notion.so/'+id)
+    add_issue_tracker_to_card(id)
+    puts(green('Issue Tracker added succesfully.'))
+
 
 @task
 def update_notion_channels_info():
