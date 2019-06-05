@@ -449,6 +449,16 @@ GITHUB_API_TOKEN_FILE = 'credentials/github_api.json'
 GITHUB_API_TOKEN_NAME = 'cloud-chef-token'
 GITHUB_SUSHI_CHEFS_TEAM_ID = 2590528  # "Sushi Chefs" team = all sushi chef devs
 
+def get_github_client(token=None):
+    """
+    Returns a token-authenticated github client (to avoid code duplication).
+    """
+    if token is None:
+        with open(GITHUB_API_TOKEN_FILE, 'r') as tokenf:
+            token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
+    return Github(token)
+
+
 @task
 def create_github_repo(nickname, source_url=None, init=True, private=False):
     """
@@ -460,29 +470,29 @@ def create_github_repo(nickname, source_url=None, init=True, private=False):
     if source_url:
         description += ' from ' + str(source_url)
     repo_name = 'sushi-chef-' + nickname
-    with open(GITHUB_API_TOKEN_FILE, 'r') as tokenf:
-        token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
-        github = Github(token)
-        le_org = github.get_organization('learningequality')
 
-        # 1. create repo
-        create_repo_kwargs = dict(
-            description=description,
-            private=private,
-            has_issues=True,
-            has_wiki=False,
-            auto_init=init
-        )
-        if init:
-            create_repo_kwargs['license_template'] = 'mit'
-            create_repo_kwargs['gitignore_template'] = 'Python'
-        repo = le_org.create_repo(repo_name, **create_repo_kwargs)
+    github = get_github_client()
+    le_org = github.get_organization('learningequality')
 
-        # 3. Give "Sushi Chefs" team read/write persmissions
-        team = le_org.get_team(GITHUB_SUSHI_CHEFS_TEAM_ID)
-        team.add_to_repos(repo)
-        team.set_repo_permission(repo, 'push')
+    # 1. create repo
+    create_repo_kwargs = dict(
+        description=description,
+        private=private,
+        has_issues=True,
+        has_wiki=False,
+        auto_init=init
+    )
+    if init:
+        create_repo_kwargs['license_template'] = 'mit'
+        create_repo_kwargs['gitignore_template'] = 'Python'
+    repo = le_org.create_repo(repo_name, **create_repo_kwargs)
+
+    # 3. Give "Sushi Chefs" team read/write persmissions
+    team = le_org.get_team(GITHUB_SUSHI_CHEFS_TEAM_ID)
+    team.add_to_repos(repo)
+    team.set_repo_permission(repo, 'push')
     puts(green('Chef repo succesfully created: {}'.format(repo.html_url)))
+
 
 
 @task
@@ -491,22 +501,32 @@ def list_chef_repos():
     Prints a list of all github repos that match the `sushi-chef-*` pattern.
     """
     CHEF_REPO_PATTERN = re.compile('.*sushi-chef-.*')
-    with open(GITHUB_API_TOKEN_FILE, 'r') as tokenf:
-        token = json.load(tokenf)[GITHUB_API_TOKEN_NAME]
-        github = Github(token)
-        le_org = github.get_organization('learningequality')
-        repos = le_org.get_repos()
-        chef_repos = []
-        for repo in repos:
-            if CHEF_REPO_PATTERN.search(repo.name):
-                chef_repos.append(repo)
-        for repo in chef_repos:
-            pulls = list(repo.get_pulls())
-            issues = list(repo.get_issues())
-            print(repo.name,
-                  '\t', repo.html_url,
-                  '\t', len(pulls), 'PRs',
-                  '\t', len(issues), 'Issues')
+    github = get_github_client() 
+    le_org = github.get_organization('learningequality')
+    repos = le_org.get_repos()
+    chef_repos = []
+    for repo in repos:
+        if CHEF_REPO_PATTERN.search(repo.name):
+            chef_repos.append(repo)
+    for repo in chef_repos:
+        pulls = list(repo.get_pulls())
+        issues = list(repo.get_issues())
+        print(repo.name,
+              '\t', repo.html_url,
+              '\t', len(pulls), 'PRs',
+              '\t', len(issues), 'Issues')
+
+@task
+def list_chef_issues(reponame):
+    if reponame is None:
+        return
+    github = get_github_client() 
+    repo = github.get_repo("learningequality/{}".format(reponame))
+    open_issues = repo.get_issues(state='open')
+    for issue in open_issues:
+        print(issue.number, issue.state, issue.title, issue.comments, 'comments', issue.labels)
+
+
 
 # HELPER METHODS
 ################################################################################
