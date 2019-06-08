@@ -18,9 +18,10 @@ def get_notion_token_v2():
     token_v2 = os.environ.get('NOTION_TOKEN')
     if token_v2 is None:
         secrets_path = os.path.join(os.path.dirname(__file__), "..", "creds", "secrets.json")
-        with open(secrets_path) as f:
-            SECRETS = json.load(f)
-            token_v2 = SECRETS.get("NOTION_API_TOKEN_V2")
+        if os.path.exists(secrets_path):
+            with open(secrets_path) as f:
+                SECRETS = json.load(f)
+                token_v2 = SECRETS.get("NOTION_API_TOKEN_V2")
     if token_v2 is None:
         raise ValueError('Could not find API token. Set `NOTION_TOKEN` ENV var')
     return token_v2
@@ -103,4 +104,29 @@ def add_issue_tracker_to_card(card, client=None):
     sample_data['created'] = datetime.now()
     row = collection.add_row(**sample_data)
 
+
+# USER LOOKUP HELPER METHOD
+################################################################################
+LE_STAFF_DATABASE_ID = 'a0557fb355464113b434cea5769286e9'
+
+def get_github_to_notion_user_lookup_table(client=None):
+    """
+    Returns a dictionary of github username -> notion user ids to be used as
+    part of github <> notion interations (issues and pull requests).
+    """
+    if client is None:
+        client = get_notion_client(monitor=False)
+    users_cvpb = client.get_block(LE_STAFF_DATABASE_ID)
+    col = users_cvpb.collection
+    lookup_table = {}
+    for user in col.get_rows():
+        notion_person = user.get_property('notion_person')
+        if notion_person:
+            notion_user_id = notion_person[0].id
+        github_username = user.get_property('github_username').strip()
+        if github_username and notion_user_id:
+            lookup_table[github_username] = notion_user_id
+    return lookup_table
+
+GITHUB_TO_NOTION_USER_LOOKUP_TABLE = get_github_to_notion_user_lookup_table()
 
