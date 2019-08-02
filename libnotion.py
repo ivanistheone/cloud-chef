@@ -128,5 +128,5 @@ def get_github_to_notion_user_lookup_table(client=None):
             lookup_table[github_username] = notion_user_id
     return lookup_table
 
-GITHUB_TO_NOTION_USER_LOOKUP_TABLE = get_github_to_notion_user_lookup_table()
+# GITHUB_TO_NOTION_USER_LOOKUP_TABLE = get_github_to_notion_user_lookup_table()
 

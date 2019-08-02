@@ -6,26 +6,28 @@ import json
 import os
 import pipes
 import re
+import sys
 import time
 
-from fabric.api import env, task, local, sudo, run
+from fabric.api import env, task, local, sudo, run, prompt
 from fabric.api import get, put, require
 from fabric.colors import red, green, blue, yellow
-from fabric.context_managers import cd, prefix, show, hide, shell_env
+from fabric.context_managers import cd, prefix, show, hide, shell_env, quiet
 from fabric.contrib.files import exists, sed, upload_template
 from fabric.utils import puts
 
 from libstudio import StudioApi
 
 from notion.client import NotionClient
-from libnotion import add_issue_tracker_to_card
+from libnotion import add_issue_tracker_to_card, get_github_to_notion_user_lookup_table
 
 
 # FAB SETTTINGS
 ################################################################################
 env.user = os.environ.get('USER')
 env.password = os.environ.get('SUDO_PASSWORD')
-env.notion_token = os.environ.get('NOTION_TOKEN')
+if 'NOTION_TOKEN' in os.environ:
+    env.notion_token = os.environ.get('NOTION_TOKEN')
 
 # Studio
 STUDIO_TOKEN = os.environ.get('STUDIO_TOKEN')
@@ -641,6 +643,8 @@ def update_notion_channels_info():
     # Update Notion channels using info from Studio API
     for notion_channel in notion_channels:
         channel_id = notion_channel.get_property('channel_id')
+        if '[' in channel_id and ']' in channel_id:
+            channel_id = channel_id.split('[')[1].split(']')[0]
         channel_name = notion_channel.get_property('name')
         if channel_id:
             puts(green('Updating notion card for channel ' + channel_name + ' channel_id=' + channel_id))
@@ -652,4 +656,134 @@ def update_notion_channels_info():
             notion_channel.name = channel_info_dict['name']
         else:
             puts(yellow('Skipping channel named ' + channel_name))
+
+# NOTION INTEGRATION
+################################################################################
+
+def confrimstep(msg='Done?'):
+    puts(green(msg))
+    confirmation = prompt("Enter y to continue:")
+    if confirmation != "y":
+        puts(red('Did not receive confirmation so exiting...'))
+        sys.exit(1)
+
+STUDIO_URLS_BY_LANDSCAPE = {
+    'master': 'https://studio.learningequality.org',
+    'develop': 'https://develop.studio.learningequality.org',
+}
+
+
+@task
+def update_channel_descriptions(landscape='develop'):
+    #     
+    import sys
+    sys.path.append('.')
+    from helpers.update_descriptions import get_description_and_title_corrections
+
+
+    with quiet():
+        podnames_str = local("kubectl get pods --output='name' ", capture=True)
+    podnames = [n.strip() for n in podnames_str.split('\n')]
+    app_podnames = [n for n in podnames if 'workers' not in n and 'celery' not in n and 'redis' not in n]
+    landscape_app_podnames = [n for n in app_podnames if landscape in n]
+    firstpodname = landscape_app_podnames[0].split('/')[1]
+    print(firstpodname)
+    cmd = 'kubectl exec -ti {firstpodname}  -c app /contentcuration/contentcuration/manage.py shell'.format(firstpodname=firstpodname)
+    puts(green('First run following command to connect to Studio Django shell '))
+    puts(blue(cmd))
+    # confrimstep()
+    
+
+    # Studio API client
+    # if os.path.exists('cache.sqlite3'):
+    #     os.remove('cache.sqlite3')
+    studio_url = STUDIO_URLS_BY_LANDSCAPE[landscape]
+    studio_api = StudioApi(studio_url=studio_url, token=STUDIO_TOKEN,
+                           username=env.studio_user, password=env.studio_pass)
+
+    rows = get_description_and_title_corrections()
+    # DEBUG
+    testrow = [row for row in rows if row['channel_id'] == '310ec19477d15cf7b9fed98551ba1e1f'][0]
+    rows = [testrow]
+    # /DEBUG
+    for row in rows:
+        channel_id = row['channel_id']
+        print('Processing', channel_id, row['channel_title'])
+
+        # Studio version (current state)
+        channel_info_dict = studio_api.get_channel(channel_id)
+        old_name = channel_info_dict['name']
+        old_description = channel_info_dict['description']
+
+        print(row)
+        # New info (desired state)
+        new_name = row['channel_title']
+        new_description = row['new_description']
+        assert len(new_description) < 400, 'description too long'
+        
+        if new_description != old_description or new_name != old_name:
+
+            puts(green('Copy-paste the following lines commands into the Django shell:'))
+            cmds = []
+            cmds += ["from contentcuration.models import Channel"]
+            cmds += ["ch = Channel.objects.get(id='{channel_id}')".format(channel_id=channel_id)]
+            cmd = '\n'.join(cmds)
+            puts(blue(cmd))
+
+            if new_description != old_description:
+                print('OLD', old_description)
+                print('NEW', new_description)
+                puts(green('1. Changing description on channel_id=' + channel_id + ' ' + old_name))
+                puts(green('Copy-paste the following lines commands into the Django shell:'))
+                excaped_desc = get_excaped_str(new_description)
+                cmds = []
+                cmds += ["new_description_unicode = '" + excaped_desc + "'.decode('utf-8')"]
+                cmds += ["ch.description = new_description_unicode"]
+                cmds += ["ch.save()"]
+                cmds += ["ch_root = ch.main_tree"]
+                cmds += ["ch_root.changed = True"]
+                cmds += ["ch_root.save()"]
+                cmd = '\n'.join(cmds)
+                puts(blue(cmd))
+
+            if new_name != old_name:
+                puts(green('2. Changing name on channel_id=' + channel_id))
+                puts(green('Copy-paste the following lines commands into the Django shell:'))
+                print('changing channel name', channel_id, old_name)
+                print('OLD', repr(old_name))
+                print('NEW', repr(new_name))
+                excaped_name = get_excaped_str(new_name)
+                cmds = []
+                cmds += ["new_name_unicode = '" + excaped_name + "'.decode('utf-8')"]
+                cmds += ["ch.name = new_name_unicode"]
+                cmds += ["ch.save()"]
+                cmds += ["ch_root = ch.main_tree"]
+                cmds += ["ch_root.title = new_name_unicode"]
+                cmds += ["ch_root.changed = True"]
+                cmds += ["ch_root.save()"]
+                cmd = '\n'.join(cmds)
+                puts(blue(cmd))
+
+            puts(green('3. Checkout git repo for channel_id=' + channel_id + ' ' + old_name))
+            # # Notion API
+            # client = NotionClient(token_v2=env.notion_token, monitor=False)
+            # studio_channels_url = 'https://www.notion.so/learningequality/761249f8782c48289780d6693431d900?v=44827975ce5f4b23b5157381fac302c4'
+            # page = client.get_block(studio_channels_url)
+            # notion_channels = page.collection.get_rows()
+            # for notion_channel in notion_channels:
+            #     print(notion_channel)
+
+            puts(green('4. manually update descr in chef code'))
+            puts(green('5. Publish channel'))
+
+
+def get_excaped_str(unicode_str):
+    """
+    Crazy hack to get a copy-pastable string with unicode escapes that will work
+    in the ascii-limited interactive pod shell.
+    """
+    excaped_raw = str(unicode_str.encode('utf-8'))
+    excaped_str = excaped_raw[2:-2].replace ('\\\\', '\\')
+    return excaped_str
+
 
