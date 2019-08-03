@@ -130,3 +130,26 @@ def get_github_to_notion_user_lookup_table(client=None):
 
 # GITHUB_TO_NOTION_USER_LOOKUP_TABLE = get_github_to_notion_user_lookup_table()
 
+
+
+# Get channel data
+################################################################################
+def get_channel_data_by_channel_id(client=None):
+    """
+    Returns json data for all channels. Use to cache results so will run faster.
+    """
+    if client is None:
+        client = get_notion_client(monitor=False)
+    # Suudio Channels All Channels view
+    studio_channels_url = 'https://www.notion.so/learningequality/761249f8782c48289780d6693431d900?v=44827975ce5f4b23b5157381fac302c4'
+    studio_channles_view = client.get_collection_view(studio_channels_url)
+    studio_channels = studio_channles_view.collection.get_rows()
+    #
+    results = {}
+    for studio_channel in studio_channels:
+        channel_id = studio_channel.get_property('channel_id')
+        if '[' in channel_id and ']' in channel_id:
+            channel_id = channel_id.split('[')[1].split(']')[0]
+        if channel_id:
+            results[channel_id] = studio_channel
+    return results

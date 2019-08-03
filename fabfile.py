@@ -12,7 +12,7 @@ import time
 from fabric.api import env, task, local, sudo, run, prompt
 from fabric.api import get, put, require
 from fabric.colors import red, green, blue, yellow
-from fabric.context_managers import cd, prefix, show, hide, shell_env, quiet
+from fabric.context_managers import cd, prefix, show, hide, shell_env, quiet, lcd
 from fabric.contrib.files import exists, sed, upload_template
 from fabric.utils import puts
 
@@ -20,6 +20,8 @@ from libstudio import StudioApi
 
 from notion.client import NotionClient
 from libnotion import add_issue_tracker_to_card, get_github_to_notion_user_lookup_table
+from libnotion import get_channel_data_by_channel_id
+
 
 
 # FAB SETTTINGS
@@ -657,15 +659,14 @@ def update_notion_channels_info():
         else:
             puts(yellow('Skipping channel named ' + channel_name))
 
-# NOTION INTEGRATION
+
+
+
+
+# CHANNEL DESCRIPTIONS FROM GOOGLE DOC TABLE SCRIPT (Aug 2019)
 ################################################################################
 
-def confrimstep(msg='Done?'):
-    puts(green(msg))
-    confirmation = prompt("Enter y to continue:")
-    if confirmation != "y":
-        puts(red('Did not receive confirmation so exiting...'))
-        sys.exit(1)
+CHEF_PARENT_DIR = '/Users/ivan/Projects/FLECode'
 
 STUDIO_URLS_BY_LANDSCAPE = {
     'master': 'https://studio.learningequality.org',
@@ -675,68 +676,58 @@ STUDIO_URLS_BY_LANDSCAPE = {
 
 @task
 def update_channel_descriptions(landscape='develop'):
-    #     
     import sys
     sys.path.append('.')
     from helpers.update_descriptions import get_description_and_title_corrections
 
-
+    # Get a pod-name in appropriate (master or develop)
     with quiet():
         podnames_str = local("kubectl get pods --output='name' ", capture=True)
     podnames = [n.strip() for n in podnames_str.split('\n')]
     app_podnames = [n for n in podnames if 'workers' not in n and 'celery' not in n and 'redis' not in n]
     landscape_app_podnames = [n for n in app_podnames if landscape in n]
     firstpodname = landscape_app_podnames[0].split('/')[1]
-    print(firstpodname)
     cmd = 'kubectl exec -ti {firstpodname}  -c app /contentcuration/contentcuration/manage.py shell'.format(firstpodname=firstpodname)
     puts(green('First run following command to connect to Studio Django shell '))
     puts(blue(cmd))
-    # confrimstep()
-    
+    confrimstep()
 
     # Studio API client
-    # if os.path.exists('cache.sqlite3'):
-    #     os.remove('cache.sqlite3')
     studio_url = STUDIO_URLS_BY_LANDSCAPE[landscape]
     studio_api = StudioApi(studio_url=studio_url, token=STUDIO_TOKEN,
                            username=env.studio_user, password=env.studio_pass)
+    # Notion API client
+    notion_client = NotionClient(token_v2=env.notion_token, monitor=False)
+    notion_channels_by_channel_id = get_channel_data_by_channel_id(client=notion_client)
 
+    # Iterate through the rows of the table in https://docs.google.com/document/d/1PQi6y-A4ZYQOepUpe4lldK3gbquUSy3e9NLEGeIex8c/edit#
     rows = get_description_and_title_corrections()
-    # DEBUG
-    testrow = [row for row in rows if row['channel_id'] == '310ec19477d15cf7b9fed98551ba1e1f'][0]
-    rows = [testrow]
-    # /DEBUG
     for row in rows:
         channel_id = row['channel_id']
         print('Processing', channel_id, row['channel_title'])
+        # print(row)
 
         # Studio version (current state)
         channel_info_dict = studio_api.get_channel(channel_id)
         old_name = channel_info_dict['name']
         old_description = channel_info_dict['description']
 
-        print(row)
         # New info (desired state)
         new_name = row['channel_title']
         new_description = row['new_description']
         assert len(new_description) < 400, 'description too long'
-        
+
         if new_description != old_description or new_name != old_name:
 
-            puts(green('Copy-paste the following lines commands into the Django shell:'))
-            cmds = []
-            cmds += ["from contentcuration.models import Channel"]
-            cmds += ["ch = Channel.objects.get(id='{channel_id}')".format(channel_id=channel_id)]
-            cmd = '\n'.join(cmds)
-            puts(blue(cmd))
-
             if new_description != old_description:
+                puts(green('1. Changing description on channel_id=' + channel_id + ' ' + old_name))
                 print('OLD', old_description)
                 print('NEW', new_description)
-                puts(green('1. Changing description on channel_id=' + channel_id + ' ' + old_name))
-                puts(green('Copy-paste the following lines commands into the Django shell:'))
+                puts(green('Copy-paste the following commands into the Django shell:'))
                 excaped_desc = get_excaped_str(new_description)
                 cmds = []
+                cmds += ["from contentcuration.models import Channel"]
+                cmds += ["ch = Channel.objects.get(id='{channel_id}')".format(channel_id=channel_id)]
                 cmds += ["new_description_unicode = '" + excaped_desc + "'.decode('utf-8')"]
                 cmds += ["ch.description = new_description_unicode"]
                 cmds += ["ch.save()"]
@@ -745,15 +736,17 @@ def update_channel_descriptions(landscape='develop'):
                 cmds += ["ch_root.save()"]
                 cmd = '\n'.join(cmds)
                 puts(blue(cmd))
+                confrimstep()
 
             if new_name != old_name:
                 puts(green('2. Changing name on channel_id=' + channel_id))
                 puts(green('Copy-paste the following lines commands into the Django shell:'))
-                print('changing channel name', channel_id, old_name)
-                print('OLD', repr(old_name))
-                print('NEW', repr(new_name))
+                print('changing channel name', channel_id, 'from', old_name, 'to', new_name)
                 excaped_name = get_excaped_str(new_name)
                 cmds = []
+                if new_description == old_description:  # no need to repring if already printed above
+                    cmds += ["from contentcuration.models import Channel"]
+                    cmds += ["ch = Channel.objects.get(id='{channel_id}')".format(channel_id=channel_id)]
                 cmds += ["new_name_unicode = '" + excaped_name + "'.decode('utf-8')"]
                 cmds += ["ch.name = new_name_unicode"]
                 cmds += ["ch.save()"]
@@ -763,18 +756,62 @@ def update_channel_descriptions(landscape='develop'):
                 cmds += ["ch_root.save()"]
                 cmd = '\n'.join(cmds)
                 puts(blue(cmd))
+                confrimstep()
 
-            puts(green('3. Checkout git repo for channel_id=' + channel_id + ' ' + old_name))
-            # # Notion API
-            # client = NotionClient(token_v2=env.notion_token, monitor=False)
-            # studio_channels_url = 'https://www.notion.so/learningequality/761249f8782c48289780d6693431d900?v=44827975ce5f4b23b5157381fac302c4'
-            # page = client.get_block(studio_channels_url)
-            # notion_channels = page.collection.get_rows()
-            # for notion_channel in notion_channels:
-            #     print(notion_channel)
 
-            puts(green('4. manually update descr in chef code'))
-            puts(green('5. Publish channel'))
+            puts(green('3.  Update chef code for ' + old_name))
+            puts(green('Lets clone the git repo for chef channel_id=' + channel_id + ' ' + old_name))
+            if channel_id in notion_channels_by_channel_id:
+                notion_channel = notion_channels_by_channel_id[channel_id]
+                sources = notion_channel.content_source
+                if sources:
+                    source = sources[0]
+                    https_github = source.chef_github_repo
+                    if https_github and 'learningequality' in https_github:
+                        https_github = https_github.strip()
+                        puts(blue('Go to the chef github repo at ' + https_github))
+                        puts(blue('Check for different branches and outstanding pull requests'))
+                        repo_name = https_github.replace('https://github.com/learningequality/','')
+                        print(source.name, repo_name)
+                        repo_path = os.path.join(CHEF_PARENT_DIR, repo_name)
+                        if os.path.exists(repo_path):
+                            print('Repo', repo_name, 'already exists')
+                        else:
+                            git_url = 'git@github.com:learningequality/'+ repo_name + '.git'
+                            with lcd(CHEF_PARENT_DIR):
+                                local('git clone ' + git_url)
+                        puts(blue('Go to the chef local repo at ' + repo_path))
+                    else:
+                        puts(blue('no github url; find github repo manually and update on notion card'))
+                else:
+                    print('no source linked on channel', new_name)
+            else:
+                print('No Notion card for ', channel_id)
+            confrimstep()
+
+            if new_description != old_description:
+                puts(green('3.a. Set the channel description in chef code to'))
+                print('________')
+                print(new_description)
+                print('________')
+
+            if new_name != old_name:
+                puts(green('3.b. Set the channel title in chef code to'))
+                print('________')
+                print(new_name)
+                print('________')
+            
+            puts(green('Commit the changes and push to github.'))
+            confrimstep()
+
+
+            puts(green('4. Manually publish channel'))
+            url = studio_url + '/channels/' + channel_id + '/edit'
+            puts(blue('Go to    ' + url + '    and click PUBLISH'))
+            confrimstep()
+            puts(green('DONE editing channel ' + new_name))
+
+            print('\n\n\n')
 
 
 def get_excaped_str(unicode_str):
@@ -783,7 +820,14 @@ def get_excaped_str(unicode_str):
     in the ascii-limited interactive pod shell.
     """
     excaped_raw = str(unicode_str.encode('utf-8'))
-    excaped_str = excaped_raw[2:-2].replace ('\\\\', '\\')
+    excaped_str = excaped_raw[2:-1].replace ('\\\\', '\\')
     return excaped_str
 
 
+def confrimstep(msg='Done?'):
+    puts(green(msg))
+    confirmation = prompt("Enter y to continue:")
+    if confirmation != "y":
+        puts(red('Did not receive confirmation so exiting...'))
+        sys.exit(1)
+    print('')
