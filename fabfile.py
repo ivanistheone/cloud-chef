@@ -668,6 +668,47 @@ def update_notion_channels_info():
 
 
 
+@task
+def export_channels_info(keyword=''):
+    """
+    Export the complete list of channel info from Notion API and Studio API.
+    Only channels that contain keyword in their name will be exported.
+    """
+    # Studio API client
+    if os.path.exists('cache.sqlite3'):
+        os.remove('cache.sqlite3')
+    studio_api = StudioApi(studio_url=env.studio_url, token=STUDIO_TOKEN,
+                           username=env.studio_user, password=env.studio_pass)
+    # Notion API
+    client = NotionClient(token_v2=env.notion_token, monitor=False)
+    studio_channels_url = 'https://www.notion.so/learningequality/761249f8782c48289780d6693431d900?v=44827975ce5f4b23b5157381fac302c4'
+    page = client.get_block(studio_channels_url)
+    notion_channels = page.collection.get_rows()
+    #
+    export_data = []
+    for notion_channel in notion_channels:
+        channel_id = notion_channel.get_property('channel_id')
+        if '[' in channel_id and ']' in channel_id:
+            channel_id = channel_id.split('[')[1].split(']')[0]
+        channel_name = notion_channel.get_property('name')
+        if channel_id and keyword in channel_name:
+            puts(green('Exporting infor for channel ' + channel_name + ' channel_id=' + channel_id))
+            # get info from Studio API
+            channel_info_dict = studio_api.get_channel(channel_id)
+            datum = {}
+            datum['channel_id'] = channel_info_dict['id']
+            datum['version'] = channel_info_dict['version']
+            datum['language'] = channel_info_dict['language']
+            datum['name'] = channel_info_dict['name']
+            datum['token'] = channel_info_dict['primary_token']
+            datum['public'] = channel_info_dict['public']
+            datum['created'] = channel_info_dict['created']
+            datum['source_id'] = channel_info_dict['source_id']
+            datum['published_size'] = channel_info_dict['published_size']
+            export_data.append(datum)
+    with open('channels_info.json', 'w', encoding='utf8') as json_file:
+        json.dump(export_data, json_file, indent=2, ensure_ascii=False)
+
 
 
 # CHANNEL DESCRIPTIONS FROM GOOGLE DOC TABLE SCRIPT (Aug 2019)
