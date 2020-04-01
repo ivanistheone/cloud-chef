@@ -1,4 +1,5 @@
 import datetime
+from dateutil.parser import parse
 from github import Github
 from io import BytesIO
 from itertools import groupby
@@ -656,6 +657,12 @@ def update_notion_channels_info():
             notion_channel.description = channel_info_dict['description']
             notion_channel.version = channel_info_dict['version']
             notion_channel.name = channel_info_dict['name']
+            notion_channel.channel_token = channel_info_dict['primary_token']
+            created_date = parse(channel_info_dict['created'])
+            notion_channel.last_published = created_date
+            if channel_info_dict.get('staging_tree', None):
+                notion_channel.has_stage_tree = True
+
         else:
             puts(yellow('Skipping channel named ' + channel_name))
 
