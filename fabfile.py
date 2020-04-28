@@ -24,7 +24,6 @@ from libnotion import add_issue_tracker_to_card, get_github_to_notion_user_looku
 from libnotion import get_channel_data_by_channel_id
 
 
-
 # FAB SETTTINGS
 ################################################################################
 env.user = os.environ.get('USER')
