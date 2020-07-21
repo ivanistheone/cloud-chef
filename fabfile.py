@@ -493,7 +493,7 @@ def create_github_repo(nickname, source_url=None, init=True, private=False):
     # 3. Give "Sushi Chefs" team read/write persmissions
     team = le_org.get_team(GITHUB_SUSHI_CHEFS_TEAM_ID)
     team.add_to_repos(repo)
-    team.set_repo_permission(repo, 'push')
+    team.set_repo_permission(repo, 'admin')
     puts(green('Chef repo succesfully created: {}'.format(repo.html_url)))
 
 
