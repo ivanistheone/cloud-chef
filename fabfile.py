@@ -173,145 +173,6 @@ def update_chef(nickname, branch_name=DEFAULT_GIT_BRANCH):
 
 
 
-# DAEMON CHEFS (triggerred by sushibar remote commands or local cronjobs)
-################################################################################
-
-@task
-def start_chef_daemon(nickname):
-    if STUDIO_TOKEN is None:
-        raise ValueError('Must specify STUDIO_TOKEN env var on command line')
-    chef_info = INVENTORY[nickname]
-    CHEF_DATA_DIR = os.path.join(CHEFS_DATA_DIR, chef_info[CHEFDIRNAME_KEY])
-    chef_cwd = chef_info[WORKING_DIRECTORY_KEY]
-    if chef_cwd:
-        chef_run_dir = os.path.join(CHEF_DATA_DIR, chef_cwd)
-    else:
-        chef_run_dir = CHEF_DATA_DIR
-    now = datetime.datetime.now()
-    now_str = now.strftime('%Y-%m-%d')
-    log_file = os.path.join(CHEFS_LOGS_DIR, nickname + 'd__started_' + now_str + '.log')
-    pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
-    cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
-
-    # Check if pid file exists
-    if exists(pid_file):
-        running = _check_process_running(pid_file)
-        if running:
-            puts(red('ERROR: the ' + nickname + ' daemon is already running, see ' + pid_file))
-            return
-        else:
-            puts(yellow('WARNING: A PID file for the ' + nickname + ' daemon exists: ' + pid_file))
-            puts(yellow('but a process with this PID is not running...'))
-            puts(yellow('Deleting ' + pid_file + ' contrinuing noram operatoin...'))
-            sudo('rm -f ' + pid_file)
-
-    with cd(chef_run_dir):
-        with prefix('source ' + os.path.join(CHEF_DATA_DIR, 'venv/bin/activate')):
-            orig_cmd = chef_info[COMMAND_KEY].format(studio_token=STUDIO_TOKEN)
-            new_cmd = add_args(orig_cmd, {'--daemon':None, '--cmdsock':cmdsock_file})
-            redirects = ' >>{log_file} 2>&1 '.format(log_file=log_file)
-            cmd_nohup = wrap_in_nohup(new_cmd, redirects=redirects, pid_file=pid_file)
-            puts(green('Starting ' + nickname + ' chef daemon...'))
-            sudo(cmd_nohup, user=CHEF_USER)
-            time.sleep(0.3)
-            running = _check_process_running(pid_file)
-            if running:
-                pid_str = _read_pid_file_contents(pid_file)
-                puts(green('Chef daemon started with PID=' + pid_str))
-            else:
-                puts(red('Chef daemon failed to start. Check /data/var/log/'))
-
-
-@task
-def stop_chef_daemon(nickname):
-    """
-    Read the PID file for the `nickname` chef and kill the chef process.
-    The process id we read from the `pid_file` for this chef could be either of:
-      A. the PID of the bash shell that started the chef daemons, or
-      B. the python chef process itself, so we need to handle both cases.
-    """
-    chef_info = INVENTORY[nickname]
-    pid_file = os.path.join(CHEFS_PID_DIR, nickname + 'd.pid')
-    cmdsock_file = os.path.join(CHEFS_CMDSOCKS_DIR, nickname + 'd.sock')
-
-    if exists(pid_file):
-        running = _check_process_running(pid_file)
-        if running:
-            pid_str = _read_pid_file_contents(pid_file)
-
-            # CASE A: kill child processes for the parent bash shell
-            sudo('pkill --parent ' + pid_str + ' || true')
-            # shell will exit by itself, since child process has exited...
-
-            # CASE B: kill the python chef process itself
-            running = _check_process_running(pid_file)
-            if running:
-                sudo('kill -SIGTERM ' + pid_str)
-
-            # Make sure not running anymore, and cleanup
-            running = _check_process_running(pid_file)
-            if not running:
-                sudo('rm -f ' + pid_file)
-                sudo('rm -f ' + cmdsock_file)
-                puts(green('Successfully stopped ' + nickname + ' chef daemon.'))
-            else:
-                puts(red('Failed to kill chef daemon with PID=' + pid_str))
-        else:
-            puts(yellow('WARNING: A PID file for the ' + nickname + ' daemon exists: ' + pid_file))
-            puts(yellow('but a process with this PID is not running...'))
-            puts(yellow('Deleting ' + pid_file + ' contrinuing noram operatoin...'))
-            sudo('rm -f ' + pid_file)
-    else:
-        puts(red('Chef daemon not running. PID file not found ' + pid_file))
-
-
-
-
-# CHEF CRONJOB SCHEDULING 
-################################################################################
-
-@task
-def list_scheduled_chefs(print_cronjobs=True):
-    with hide('running', 'stdout'):
-        result = sudo('crontab -l', user=CHEF_USER)
-    cronjobs = result.splitlines()
-    if print_cronjobs:
-        for cronjob in cronjobs:
-            print(cronjob)
-    return cronjobs
-
-@task
-def schedule_chef(nickname):
-    chef_info = INVENTORY[nickname]
-    cronjobs = list_scheduled_chefs(print_cronjobs=False)
-    if any([nickname in cronjob for cronjob in cronjobs]):
-        puts(red('ERROR: chef is already scheduled! Current crontab contains:'))
-        list_scheduled_chefs(print_cronjobs=True)
-        return
-    command = """/bin/echo '{"command":"start", "args":{"stage":true} }' | """ + \
-              """/bin/nc -U -q 1  /data/var/cmdsocks/{n}d.sock""".format(n=nickname)
-    crontab_schedule = chef_info[CRONTAB_KEY]
-    new_cronjob = crontab_schedule + ' ' + command
-    cronjobs.append(new_cronjob)
-    cronjobs_str = '\n'.join(cronjobs)
-    escaped_str = pipes.quote(cronjobs_str)
-    sudo("echo {} | crontab - ".format(escaped_str), user=CHEF_USER)
-
-@task
-def unschedule_chef(nickname):
-    cronjobs = list_scheduled_chefs(print_cronjobs=False)    
-    if not any([nickname in cronjob for cronjob in cronjobs]):
-        puts(red('ERROR: chef not scheduled, so cannot unschedule.'))
-        return
-    newcronjobs = []
-    for cronjob in cronjobs:
-        if nickname not in cronjob:
-            newcronjobs.append(cronjob)    
-    newcronjobs_str = '\n'.join(newcronjobs)
-    escaped_str = pipes.quote(newcronjobs_str)
-    sudo("echo {} | crontab - ".format(escaped_str), user=CHEF_USER)
-
-
 
 # INFO
 ################################################################################
@@ -575,28 +436,6 @@ def add_args(cmd, args_dict):
     return cmd.replace('--token', args_str + ' --token')
 
 
-
-def _read_pid_file_contents(pid_file):
-    if not exists(pid_file):
-        print('operational error: PID file missing in /data/var/run/')
-        return None
-    tmp_fd = BytesIO()
-    with hide('running'):
-        get(pid_file, tmp_fd)
-    pid_str = tmp_fd.getvalue().decode('ascii').strip()
-    return pid_str
-
-def _check_process_running(pid_file):
-    pid_str = _read_pid_file_contents(pid_file)
-    if pid_str is None or len(pid_str)==0:
-        return False
-    processes  = psaux()
-    found = False
-    for process in processes:
-        if process['PID'] == pid_str:
-            found = True
-    return found
-
 def parse_psaux(psaux_str):
     """
     Parse the output of `ps aux` into a list of dictionaries representing the parsed
@@ -687,8 +526,11 @@ def export_channels_info(keyword=''):
     export_data = []
     for notion_channel in notion_channels:
         channel_id = notion_channel.get_property('channel_id')
+        
         if '[' in channel_id and ']' in channel_id:
             channel_id = channel_id.split('[')[1].split(']')[0]
+        if len(channel_id) != 32:
+            continue  # skip cards that don't have a valid-looking channel_id
         channel_name = notion_channel.get_property('name')
         if channel_id and keyword in channel_name:
             puts(green('Exporting infor for channel ' + channel_name + ' channel_id=' + channel_id))
