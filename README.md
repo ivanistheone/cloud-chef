@@ -61,29 +61,6 @@ You can also run chef in background
 
 
 
-Daemon mode
------------
-Start chef with `--daemon` and `--cmdsock` options:
-
-    export STUDIO_TOKEN=<YOURSTUDIOTOKENGOESGHERE>
-    fab -R cloud-kitchen start_chef_daemon:<nickname>
-
-To stop the chef daemon, run:
-
-    fab -R cloud-kitchen stop_chef_daemon:<nickname>
-
-
-
-Scheduled chef runs cronjob
----------------------------
-Follow daemon mode setup to start a daemon chef, then call
-
-    fab -R cloud-kitchen  list_scheduled_chefs
-    fab -R cloud-kitchen  schedule_chef:<nickname>
-
-To unschedule a chef use the `unschedule_chef` task.
-
-
 
 
 
