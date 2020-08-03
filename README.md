@@ -1,5 +1,7 @@
-Cloud Chef Fabric Tasks
-=======================
+Aug 3rd: the code in this repo has been moved to https://github.com/learningequality/content-automation-scripts
+
+[DEPRECATED] Cloud Chef Fabric Tasks
+====================================
 Fabric scripts to create a temporary cheffing server running Debian GNU/Linux.
 System prerequisites for `ricecooker` are installed, and the /data directory is
 provisioned with lots of disk space.
